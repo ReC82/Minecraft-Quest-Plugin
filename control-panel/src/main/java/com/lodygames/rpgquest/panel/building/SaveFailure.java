@@ -48,7 +48,8 @@ public record SaveFailure(String code, String message, Kind kind) {
                 : row.get().resultValue() == null || row.get().resultValue().isBlank() ? "FAILED"
                         : row.get().resultValue();
         Kind kind = CONTENT.contains(code) ? Kind.CONTENT
-                : "ALREADY_EXISTS".equals(code) || "VERSION_CONFLICT".equals(code) ? Kind.CONFLICT
+                : "ALREADY_EXISTS".equals(code) || "VERSION_CONFLICT".equals(code)
+                        || "PLACED_VERSION_PROTECTED".equals(code) ? Kind.CONFLICT
                 : Kind.WRITE;
         return Optional.of(new SaveFailure(code, message, kind));
     }

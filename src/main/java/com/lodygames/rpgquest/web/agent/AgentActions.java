@@ -488,6 +488,8 @@ public interface AgentActions {
      *                         bâtiment posé ? Un emplacement est une intention, un placement est un
      *                         fait : changer l'intention ne déplace aucun bloc
      * @param restoreSource    d'où viendrait le terrain si on libérait maintenant, en clair
+     * @param placedCopy       où est conservée, par empreinte, la version réellement posée (#644),
+     *                         en clair ; vide si le service n'est pas branché
      */
     record BuildingPlacementSummary(String siteId, String buildingId, String buildingName,
                                     String world, int anchorX, int anchorY, int anchorZ,
@@ -498,7 +500,7 @@ public interface AgentActions {
                                     int buildingVersion, String schematicSha,
                                     int libraryVersion, String librarySha, boolean outdated,
                                     int desiredRotation, boolean diverges,
-                                    String restoreSource) {
+                                    String restoreSource, String placedCopy) {
     }
 
     /**

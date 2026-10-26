@@ -1251,6 +1251,10 @@ public final class WorkshopPages {
             case CONFLICT -> "VERSION_CONFLICT".equals(f.code())
                     ? "Le bâtiment a été republié entre-temps : rechargez la bibliothèque (« Rafraîchir »), "
                             + "relisez cette page, puis publiez de nouveau si c'est toujours votre intention."
+                    : "PLACED_VERSION_PROTECTED".equals(f.code())
+                    ? "Ce bâtiment est posé en jeu et sa version posée doit rester intacte (#644). "
+                            + "Changez le nom technique dans « Le bâtiment souhaité » pour l'enregistrer "
+                            + "comme un nouveau bâtiment ; rien n'est demandé à l'IA."
                     : "Un bâtiment de la bibliothèque porte déjà cet identifiant. Changez le nom "
                             + "technique dans « Le bâtiment souhaité », puis enregistrez de nouveau.";
             case WRITE -> "Échec d'écriture côté serveur (disque, WorldEdit ou bibliothèque) : le plan "

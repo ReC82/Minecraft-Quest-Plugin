@@ -3701,6 +3701,8 @@ public final class AgentActionExecutor {
                 row.put("desiredRotation", p.desiredRotation());
                 row.put("diverges", p.diverges());
                 row.put("restoreSource", p.restoreSource());
+                // #644 (26/10) : où est conservée la version réellement posée.
+                row.put("placedCopy", p.placedCopy());
                 placementRows.add(row);
             }
 

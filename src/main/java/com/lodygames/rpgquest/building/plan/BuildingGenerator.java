@@ -48,6 +48,7 @@ public final class BuildingGenerator {
     private final Logger logger;
     private Path schematicsDirectory;
     private java.time.Clock clock = java.time.Clock.systemUTC();
+    private com.lodygames.rpgquest.building.PlacedVersions placedVersions;
 
     public BuildingGenerator(BuildingLibrary library, SchematicWorkshop workshop,
                              Path buildingsDirectory, Logger logger) {
@@ -66,6 +67,18 @@ public final class BuildingGenerator {
         this.clock = clock == null ? java.time.Clock.systemUTC() : clock;
         return this;
     }
+
+    /**
+     * Protège les versions posées en jeu (#644, exigence du 26/10) : sans cet appel, aucun contrôle
+     * des poses n'est fait avant une republication.
+     */
+    public BuildingGenerator protectingPlaced(com.lodygames.rpgquest.building.PlacedVersions placed) {
+        this.placedVersions = placed;
+        return this;
+    }
+
+    /** Code de refus d'une republication qui ne pourrait pas prouver la conservation de la version posée (#644). */
+    public static final String PLACED_VERSION_PROTECTED = "PLACED_VERSION_PROTECTED";
 
     /**
      * Le résultat d'une génération, avec les faits constatés — jamais la demande.
@@ -433,6 +446,14 @@ public final class BuildingGenerator {
         String schematic = plan.id() + ".schem";
         List<String> archived = new ArrayList<>();
         if (existing.isPresent()) {
+            // #644 : une version POSÉE en jeu est immuable. Avant d'écrire quoi que ce soit, chaque
+            // pose doit être retrouvée par son empreinte ; sinon rien n'est écrit.
+            if (placedVersions != null) {
+                Optional<String> unsafe = placedVersions.refusalBeforeOverwrite(existing.get());
+                if (unsafe.isPresent()) {
+                    return Result.failure(PLACED_VERSION_PROTECTED, unsafe.get());
+                }
+            }
             // #290 : la version remplacée est ARCHIVÉE avant toute écriture — définition et
             // schematic — pour qu'un retour en arrière reste possible. Les exemplaires déjà posés ne
             // bougent pas : seule une action explicite de remplacement les met à jour.
@@ -442,6 +463,14 @@ public final class BuildingGenerator {
                 return Result.failure("WRITE_FAILED", "La version " + existing.get().version()
                         + " n'a pas pu être archivée avant d'être remplacée ("
                         + error.getClass().getSimpleName() + ") : rien n'a été écrit.");
+            }
+            // #644 : la copie archivée doit porter EXACTEMENT l'empreinte de chaque pose — sinon le
+            // fichier courant, seul exemplaire vérifié, n'est pas écrasé.
+            if (placedVersions != null) {
+                Optional<String> unsafe = placedVersions.refusalAfterArchive(existing.get());
+                if (unsafe.isPresent()) {
+                    return Result.failure(PLACED_VERSION_PROTECTED, unsafe.get());
+                }
             }
         }
         SchematicGateway.Outcome written = workshop.regenerate(schematic, expansion.blueprint());

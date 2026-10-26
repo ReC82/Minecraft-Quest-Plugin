@@ -1424,6 +1424,25 @@ class WorkshopFlowTest {
         assertEquals(1, aiCalls.get(), "un échec d'écriture ne coûte aucun appel");
     }
 
+    /** #644 (26/10) : la republication d'un bâtiment posé est refusée — aucun appel IA, consigne claire. */
+    @Test
+    void aProtectedPlacedVersionIsAConflictNotACorrection() throws Exception {
+        start();
+        String withDraft = propose(createProject("Église", BRIEF));
+        answer(latest("building.plan.audit"), AUDIT_OK);
+        gesture(get(withDraft).body(), "generate");
+        String refusal = "« Église » est posé sur l'emplacement « buildsite_0016 » et la version posée n'a pas "
+                + "d'empreinte mémorisée : rien ne prouve qu'elle serait conservée. Rien n'a été écrit.";
+        agentAnswers(latest("building.generate").id(), "FAILED", refusal, "{\"code\":\"PLACED_VERSION_PROTECTED\","
+                + "\"message\":" + Json.write(refusal) + "}");
+
+        String main = mainCard(get(withDraft).body());
+        assertTrue(main.contains("L'enregistrement a échoué (PLACED_VERSION_PROTECTED)"), main);
+        assertTrue(main.contains("buildsite_0016"), main);
+        assertTrue(main.contains("version posée doit rester intacte"), main);
+        assertEquals(1, aiCalls.get(), "un refus de protection ne coûte aucun appel");
+    }
+
     /** Un échec de CONTENU part vers l'IA tel quel, sans commentaire à écrire. */
     @Test
     void aContentFailureAtSaveIsSentToTheAiWithoutAComment() throws Exception {

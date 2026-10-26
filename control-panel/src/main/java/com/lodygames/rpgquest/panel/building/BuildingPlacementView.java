@@ -19,6 +19,8 @@ package com.lodygames.rpgquest.panel.building;
  *                        l'emplacement, {@code -1} si incalculable
  * @param diverges        l'intention de l'emplacement diffère-t-elle du fait posé ?
  * @param restoreSource   d'où viendrait le terrain si on libérait maintenant, en clair
+ * @param placedCopy      où est conservée, par empreinte, la version réellement posée (#644), en
+ *                        clair ; vide si le plugin ne le dit pas
  */
 public record BuildingPlacementView(String siteId, String buildingId, String buildingName,
                                     String world, int anchorX, int anchorY, int anchorZ,
@@ -29,7 +31,12 @@ public record BuildingPlacementView(String siteId, String buildingId, String bui
                                     int buildingVersion, String schematicSha,
                                     int libraryVersion, String librarySha, boolean outdated,
                                     int desiredRotation, boolean diverges,
-                                    String restoreSource) {
+                                    String restoreSource, String placedCopy) {
+
+    /** La version posée n'est retrouvée nulle part, ou ne peut pas l'être (#644). */
+    public boolean placedCopyAtRisk() {
+        return placedCopy != null && (placedCopy.contains("INTROUVABLE") || placedCopy.contains("non vérifiable"));
+    }
 
     public String anchorLabel() {
         return anchorX + " / " + anchorY + " / " + anchorZ;

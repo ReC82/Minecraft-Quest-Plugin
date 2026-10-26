@@ -9,8 +9,8 @@
 * Branche Git : `feature/568-apercu-volume-passage` (PR #888, fusionnée dans `chore/257-ci-github-actions` en `72227f73`) ; rapport : `docs/568-rapport-apercu-passage`
 * Commit actuel si disponible : `72227f73`
 * Début de la tâche : 2026-10-26 20:43:48
-* Fin de la tâche : 2026-10-26 21:31:00
-* Durée totale : 00:47:12
+* Fin de la tâche : 2026-10-26 21:29:22
+* Durée totale : 00:45:34
 
 ## Demande
 

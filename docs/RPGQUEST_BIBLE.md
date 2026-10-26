@@ -2648,6 +2648,17 @@ retrait réussi et le relevé « Rafraîchir » de la bibliothèque — il survi
   (définition et schematic) dans `buildings/.history/<id>/v<N>_<horodatage>/`. Les exemplaires déjà
   posés ne changent pas : leur mise à jour reste l'action explicite du cycle de vie (#234). Un
   identifiant pris par un autre bâtiment reste protégé.
+- **Version posée immuable** *(#644, exigence du 26/10)* : si le bâtiment est **posé** sur au moins un
+  emplacement, le plugin retrouve d'abord, par l'**empreinte SHA-256** mémorisée à la pose, le fichier
+  exact qui a été collé (fichier courant, `buildings/.history/<id>/…` ou `buildings/.retired/<id>_…`),
+  puis vérifie après l'archivage que la copie de l'historique porte **la même empreinte**. Sinon rien
+  n'est écrit : refus `PLACED_VERSION_PROTECTED` (pose sans empreinte, antérieure à #234 ; version
+  posée introuvable ; copie non vérifiée). L'Atelier le présente comme un conflit, sans appel IA :
+  enregistrer l'amélioration sous un **nouvel identifiant**, ou libérer d'abord l'emplacement. La
+  suppression définitive (#644) et le retrait (#284) restent refusés tant que le bâtiment est posé ; la
+  restauration du terrain s'appuie sur la sauvegarde prise à la pose, que la republication ne touche
+  pas. La fiche d'un emplacement occupé affiche « **Version posée conservée** » (où est la copie exacte)
+  et alerte si elle est introuvable. Aucun bloc du monde n'est lu ni modifié par ces contrôles.
 - Dans la **Bibliothèque**, chaque bâtiment nomme le projet qui le produit, avec son identifiant, et
   propose « Reprendre la conception ». Diagnostic du « mauvais rattachement » signalé au retrait :
   aucun lien erroné en base — le lien projet ↔ bâtiment est l'identifiant de bibliothèque, et la

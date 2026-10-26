@@ -1354,6 +1354,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `.purging` ; refus si posé, lié à un portail (même brouillon), embarqué ou redéclaré ; aucun bloc du
   monde touché ; déplacement en attente puis effacement, compensation, journal `buildings/.audit/purges.log`.
   TC-399 PENDING MANUAL VALIDATION. Voir la Bible.
+- **Version posée immuable** *(issue #644, exigence du 26/10/2026, non déployé)* — `PlacedVersions` retrouve
+  par empreinte SHA-256 la copie exacte de chaque version posée (courante, `.history`, `.retired`) ; une
+  republication Atelier d'un bâtiment posé est refusée (`PLACED_VERSION_PROTECTED`) si la version posée
+  n'a pas d'empreinte, est introuvable ou si sa copie archivée n'est pas vérifiée ; fiche d'emplacement :
+  « Version posée conservée ». Audit lecture seule de l'église DEV (`test_eglise_747c`) : v1 posée
+  conservée à l'identique dans `.history`. TC-439 PENDING MANUAL VALIDATION. Voir la Bible.
 - **Images de référence et « Recommencer depuis ma description »** *(issue #283, déployé sur DEV le
   12/10/2026, `7025bd8`)* — jusqu'à 4 images par projet (type vérifié sur les octets, 4 Mio, stockées dans
   `control-panel.db`, effacées au retrait), transmises en pixels à OpenAI / Anthropic / Gemini comme

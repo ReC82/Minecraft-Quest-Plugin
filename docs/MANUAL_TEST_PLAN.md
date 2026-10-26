@@ -9335,11 +9335,13 @@ projet réel** : seulement un projet d'essai créé pour l'occasion (aucun appel
 
 1.  `/buildings/sites` → Rafraîchir, `/buildings/library` → Rafraîchir (relevés à jour).
 2.  `/buildings/workshop` : chaque tuile affiche « Utilisé en jeu », « Non utilisé » ou « Utilisation à vérifier »
-    et son état Bibliothèque. L'église posée doit être « Utilisé en jeu » avec « Voir où utilisé ».
+    et son état Bibliothèque. D'après le relevé du 24/10, **« TEST #747c église »** (`test_eglise_747c`, posé sur
+    `buildsite_0016`) doit être « Utilisé en jeu » avec « Voir où utilisé » ; « Église du hub » (`eglise_du_hub`)
+    n'était posée nulle part dans ce relevé.
 3.  Chercher `eglise` (sans accent, minuscules) : l'église apparaît, « 1 projet(s) sur N » ou plus. Chercher
     `chateau` + filtre « Utilisés en jeu » : message « Aucun projet ne correspond… », « Effacer la recherche et
     les filtres » ramène la liste complète. Tri « Nom (A → Z) » puis « Plus anciens ».
-4.  Ouvrir l'église → « Supprimer le projet — Utilisé en jeu » : motifs listés (posé sur …), **aucun bouton**.
+4.  Ouvrir « TEST #747c église » → « Supprimer le projet — Utilisé en jeu » : motifs listés (posé sur …), **aucun bouton**.
 5.  Atelier → Nouveau projet « Essai 881 », identifiant `essai_suppression_881`, sans demander de plan. Sa
     fiche → « Supprimer le projet — Non utilisé » : liste de ce qui serait supprimé et conservé. Cliquer sans
     cocher : refus. Cocher, cliquer deux fois vite : « Projet « Essai 881 » supprimé… », puis aucune erreur ;

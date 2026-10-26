@@ -60,8 +60,11 @@ panel uniquement, refusé si le bâtiment est posé, lié à un portail, publié
 ### Action serveur
 
 - Aucune action VeryGames : pas de JAR, pas de configuration, pas de redémarrage Minecraft.
-- PlugAdmin à redéployer sur AWS avec `scripts/plugadmin/deploy.sh` (voir le rapport de session pour
-  l'état réel du déploiement).
+- **Effectué le 26/10 à 15:07** : PlugAdmin `077802d2` (PR #883, CI PR + commit de fusion vertes) déployé par
+  `scripts/plugadmin/deploy.sh --wait-ci` ; `/health` ONLINE (le KO du script est la course connue au
+  redémarrage), classes `ProjectUsage` / `WorkshopProjectDeletion` / `WorkshopProjectQuery` présentes dans le JAR
+  servi, `/buildings/workshop` → 303 /login. Release précédente (`a034f14a`) sous `/opt/plugadmin/releases/`.
+  Aucun projet supprimé ni modifié.
 - **Aucune migration** `control-panel.db` (tables existantes ; la suppression n'a lieu que sur clic).
 - Ne supprimer **aucun projet réel** pour « tester » : TC-438 se fait sur un projet d'essai.
 

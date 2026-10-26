@@ -81,9 +81,17 @@ class BuildingLifecyclePageTest {
                 + "\"outdated\":" + outdated + ","
                 + "\"desiredRotation\":" + (diverges ? 0 : placedRotation) + ","
                 + "\"diverges\":" + diverges + ","
-                + "\"restoreSource\":\"terrain d'origine (1 sauvegarde)\"}"
+                + "\"restoreSource\":\"terrain d'origine (1 sauvegarde)\","
+                + "\"placedCopy\":\"" + (outdated
+                        ? "v1 — conservée dans l'historique (buildings/.history/test_hut_01/v1_20261025-075854/test_hut_01.schem)"
+                        : "v1 — fichier actuel de la bibliothèque (schematics/test_hut_01.schem)") + "\"}"
                 + "]}";
     }
+
+    /** #644 (26/10) : la version posée n'est plus retrouvée nulle part. */
+    private static final String SITES_LOST = SITES_OUTDATED.replaceFirst(
+            "v1 — conservée dans l'historique \\([^)]*\\)",
+            "v1 — INTROUVABLE : aucun fichier conservé ne porte l'empreinte posée");
 
     /**
      * Issue #239 — un emplacement OCCUPÉ dont le relevé ne porte AUCUN placement.
@@ -400,6 +408,34 @@ class BuildingLifecyclePageTest {
         assertTrue(page.contains("jamais modifié tout seul"),
                 "l'écran doit affirmer qu'aucune mise à jour n'est automatique");
         assertTrue(page.contains("v2"), "la version de la bibliothèque");
+    }
+
+    /** #644 (26/10) : la fiche dit où la copie exacte de la version posée est conservée. */
+    @Test
+    void thePlacedVersionCopyIsLocated() throws Exception {
+        start();
+        seed("building.site.list", SITES_OUTDATED);
+        seed("building.definition.list", LIBRARY);
+
+        String page = fiche();
+
+        assertTrue(page.contains("Version posée conservée"), page);
+        assertTrue(page.contains("buildings/.history/test_hut_01/v1_20261025-075854/test_hut_01.schem"));
+        assertFalse(page.contains("n'est pas retrouvée à l'identique"), "aucune alerte si la copie existe");
+    }
+
+    /** #644 (26/10) : une version posée introuvable est signalée, sans rien toucher en jeu. */
+    @Test
+    void aLostPlacedVersionIsFlagged() throws Exception {
+        start();
+        seed("building.site.list", SITES_LOST);
+        seed("building.definition.list", LIBRARY);
+
+        String page = fiche();
+
+        assertTrue(page.contains("INTROUVABLE"), page);
+        assertTrue(page.contains("n'est pas retrouvée à l'identique"));
+        assertTrue(page.contains("sera refusée"));
     }
 
     // ---- L'aperçu, puis seulement la confirmation ------------------------------------------------

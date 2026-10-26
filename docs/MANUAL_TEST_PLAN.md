@@ -9363,3 +9363,29 @@ projet réel** : seulement un projet d'essai créé pour l'occasion (aucun appel
 6. https://lodyquests.lodylands.com/demo/classements/creatures : bandeau « données de démonstration », joueurs Demo_*, ligne « Déjà vaincus, mais personne sur cette période : Ender Dragon. »
 
 **Couverture automatisée** : `BoardCatalogExportTest#aSplitBoardPublishesOneRankingPerCreatureTypeActuallyKilled`, `#splitIsOnlyAcceptedForCreatureKills` ; `StatDimensionsTest#everyCountableCreatureHasAFrenchName` ; `CreatureBoardsPageTest` (6 tests : liste blanche, cartes et résumé, catégorie et recherche, périodes, lien depuis le catalogue, démo).
+
+### TC-439 — Version posée immuable : republier un bâtiment posé sans perdre la version en jeu (issue #644, exigence du 26/10, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et PlugAdmin issus de la branche `feature/644-immutable-used-versions`. **Uniquement**
+sur un bâtiment d'essai créé pour l'occasion (plan saisi à la main, aucun appel IA) — **ne pas** republier
+l'église ni un bâtiment réel.
+
+1.  Atelier → projet « Essai version posée », identifiant `essai_version_posee_644`, plan saisi à la main →
+    « Enregistrer dans la bibliothèque » (v1). Le poser sur un emplacement libre.
+2.  Fiche de l'emplacement : « Version posée conservée : v1 — fichier actuel de la bibliothèque
+    (schematics/essai_version_posee_644.schem) ».
+3.  Modifier le plan, « Publier une nouvelle version » (v2). **Attendu** : succès ; la fiche de l'emplacement
+    dit « une version plus récente existe » et « Version posée conservée : v1 — conservée dans l'historique
+    (buildings/.history/essai_version_posee_644/v1_…/essai_version_posee_644.schem) ». Le bâtiment en jeu
+    n'a pas changé.
+4.  Bibliothèque → « Voir ce qui serait supprimé » : refus « Posé sur … », aucun bouton ; « Retirer de la
+    bibliothèque » : refusé.
+5.  « Libérer » l'emplacement : le terrain d'origine revient (sauvegarde de la pose v1).
+6.  Fiche de l'église posée (`buildsite_0016`, lecture seule) : « Version posée conservée : v1 — conservée dans
+    l'historique (buildings/.history/test_eglise_747c/v1_20261025-075854/test_eglise_747c.schem) ».
+
+**Couverture automatisée** : `PlacedVersions644Test` (6 : v1 posée → v2 publiée → v1 retrouvée par empreinte,
+purge et retrait refusés, sauvegarde intacte, aucun collage ; copie non vérifiée ; version introuvable ; pose
+sans empreinte ; bâtiment non posé ; deux poses de versions différentes), `BuildingLifecyclePageTest`
+(`thePlacedVersionCopyIsLocated`, `aLostPlacedVersionIsFlagged`), `WorkshopFlowTest#aProtectedPlacedVersionIsAConflictNotACorrection`,
+`AgentActionExecutorTest` (champ `placedCopy`).

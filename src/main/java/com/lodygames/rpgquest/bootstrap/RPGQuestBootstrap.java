@@ -1415,6 +1415,12 @@ public final class RPGQuestBootstrap {
                 buildingLibrary, plugin.getDataFolder().toPath().resolve("schematics"),
                 buildingPlacementService::all, this::portalsCitingBuilding, plugin.getLogger(),
                 java.time.Clock.systemUTC()));
+        // Issue #644 (26/10) : où est conservée, par empreinte, la version réellement posée de chaque
+        // bâtiment. Lecture seule ; sert à la fiche d'emplacement et à la garde de republication.
+        com.lodygames.rpgquest.building.PlacedVersions placedVersions =
+                new com.lodygames.rpgquest.building.PlacedVersions(buildingLibrary,
+                        plugin.getDataFolder().toPath().resolve("schematics"), buildingPlacementService::all);
+        agentActions.setPlacedVersions(placedVersions);
         // Issue #246 : capturer une construction posée comme nouveau bâtiment. Lecture seule du
         // monde ; n'écrit que dans la bibliothèque, jamais par-dessus un fichier existant.
         agentActions.setCities(cityRegistry, cityDiscoveryService, cityPendings, cityBorderRenderer);
@@ -1549,7 +1555,9 @@ public final class RPGQuestBootstrap {
                 plugin.getDataFolder().toPath().resolve("buildings"), plugin.getLogger())
                 // #290 : une republication archive la version remplacée (définition + schematic).
                 .archivingTo(plugin.getDataFolder().toPath().resolve("schematics"),
-                        java.time.Clock.systemUTC()));
+                        java.time.Clock.systemUTC())
+                // #644 : une version posée en jeu n'est jamais écrasée sans copie vérifiée.
+                .protectingPlaced(placedVersions));
         // Issue #156 : enrichissements du diagnostic de réseau de voyage. Le compteur de
         // découvertes reste ASYNCHRONE de bout en bout — c'est une lecture SQL, et l'attendre
         // depuis le thread principal gèlerait le serveur le temps de la requête. Le relevé la

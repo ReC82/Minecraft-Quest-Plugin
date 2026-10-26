@@ -3134,6 +3134,12 @@ public final class BukkitAgentActions implements AgentActions {
     }
 
     private com.lodygames.rpgquest.building.BuildingFamilyPurge buildingFamilyPurge;
+    private com.lodygames.rpgquest.building.PlacedVersions placedVersions;
+
+    /** Issue #644 (26/10) : où est conservée la version posée — facultatif, comme les autres services. */
+    public void setPlacedVersions(com.lodygames.rpgquest.building.PlacedVersions placed) {
+        this.placedVersions = placed;
+    }
 
     /** Issue #644 — dépendance facultative : sans elle, aperçu et suppression sont indisponibles. */
     public void setBuildingFamilyPurge(com.lodygames.rpgquest.building.BuildingFamilyPurge purge) {
@@ -3349,6 +3355,8 @@ public final class BukkitAgentActions implements AgentActions {
                     .flatMap(d -> schematicGateway.fingerprint(d.schematic()))
                     .orElse("");
             var source = buildingPlacements.restoreSourceFor(placement.siteId());
+            // #644 (26/10) : la copie exacte de la version posée, retrouvée par son empreinte.
+            String placedCopy = placedVersions == null ? "" : placedVersions.locate(placement).label();
             rows.add(new BuildingPlacementSummary(placement.siteId(), placement.buildingId(), name,
                     placement.world(), placement.anchorX(), placement.anchorY(),
                     placement.anchorZ(), placement.rotationDegrees(),
@@ -3361,7 +3369,7 @@ public final class BukkitAgentActions implements AgentActions {
                     placement.outdatedAgainst(libraryVersion, librarySha),
                     buildingPlacements.desiredRotation(placement.siteId()).orElse(-1),
                     buildingPlacements.diverges(placement.siteId()),
-                    source.label()));
+                    source.label(), placedCopy));
         }
         return rows;
     }

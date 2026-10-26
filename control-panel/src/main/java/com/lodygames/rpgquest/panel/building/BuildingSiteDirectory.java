@@ -75,7 +75,9 @@ public record BuildingSiteDirectory(List<BuildingSiteView> sites, List<String> w
                     intOr(m.get("libraryVersion")), str(m.get("librarySha")),
                     bool(m.get("outdated")),
                     m.get("desiredRotation") == null ? -1 : intOr(m.get("desiredRotation")),
-                    bool(m.get("diverges")), str(m.get("restoreSource"))));
+                    bool(m.get("diverges")), str(m.get("restoreSource")),
+                    // #644 (26/10) : où est conservée la version réellement posée.
+                    str(m.get("placedCopy"))));
         }
         return new BuildingSiteDirectory(out, worlds, true, placements);
     }

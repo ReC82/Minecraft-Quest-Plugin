@@ -3165,7 +3165,17 @@ public final class AgentPages {
                 ? "<span class=\"muted\">inconnu</span>" : Http.esc(placed.placedBy()));
         dlRow(sb, "Terrain d'origine", placed.restoreSource().isEmpty()
                 ? "<span class=\"muted\">inconnu</span>" : Http.esc(placed.restoreSource()));
+        // #644 (26/10) : la version posée est immuable — on montre où sa copie exacte est conservée.
+        if (!placed.placedCopy().isEmpty()) {
+            dlRow(sb, "Version posée conservée", Http.esc(placed.placedCopy()));
+        }
         sb.append("</dl>");
+        if (placed.placedCopyAtRisk()) {
+            sb.append(Ui.banner("warning", "La version posée de « " + Http.esc(placed.buildingName())
+                    + " » n'est pas retrouvée à l'identique dans la bibliothèque, son historique ou ses "
+                    + "archives. Le bâtiment en jeu n'est pas modifié ; une republication sous ce même "
+                    + "identifiant sera refusée tant que cela n'est pas résolu."));
+        }
 
         if (placed.diverges()) {
             sb.append(Ui.banner("warning", "L'orientation de l'emplacement a changé après le "

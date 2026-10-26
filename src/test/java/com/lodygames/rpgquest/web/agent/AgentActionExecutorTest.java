@@ -903,6 +903,8 @@ class AgentActionExecutorTest {
         assertTrue(json.contains("\"outdated\":false"), json);
         assertTrue(json.contains("\"restorable\":true"), json);
         assertTrue(json.contains("\"restoreSource\":\"origine_buildsite_0007_1.schem\""), json);
+        // #644 (26/10) : où est conservée la version réellement posée.
+        assertTrue(json.contains("\"placedCopy\":\"v1 — fichier actuel de la bibliothèque"), json);
         assertTrue(json.contains("\"placedBy\":\"LoDyMcFly\""), json);
         assertTrue(json.contains("\"anchorX\":752") && json.contains("\"minZ\":-680")
                 && json.contains("\"maxY\":73"), "ancre et emprise : " + json);
@@ -2252,7 +2254,8 @@ class AgentActionExecutorTest {
                             750, 67, -680, 756, 73, -674,
                             "LoDyMcFly", "2026-10-11T13:40:00Z", true,
                             1, "abc123def456", 1, "abc123def456", false,
-                            180, true, "origine_buildsite_0007_1.schem"))));
+                            180, true, "origine_buildsite_0007_1.schem",
+                            "v1 — fichier actuel de la bibliothèque (schematics/test_hut_01.schem)"))));
         }
 
         String lastPreviewSiteId;

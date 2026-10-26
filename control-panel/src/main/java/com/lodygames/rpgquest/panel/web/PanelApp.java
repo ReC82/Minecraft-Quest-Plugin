@@ -115,6 +115,8 @@ public final class PanelApp {
     private final com.lodygames.rpgquest.panel.ai.AiBuildingStudio aiBuildingStudio;
     /** Issue #256 — les plans proposés par l'IA, conservés comme brouillons de travail. */
     private final BuildingPlanDraftStore planDrafts;
+    /** Issue #881 — suppression définitive d'un projet de l'Atelier (données du panel seulement). */
+    private final com.lodygames.rpgquest.panel.building.WorkshopProjectDeletion workshopDeletion;
     private final BuildingPlanWorkbench planWorkbench;
     /** #282 : vérification automatique des nouveaux plans et réparation par le moteur. */
     private final com.lodygames.rpgquest.panel.building.WorkshopAutopilot workshopAutopilot;
@@ -195,6 +197,7 @@ public final class PanelApp {
                 new com.lodygames.rpgquest.panel.ai.AiBuildingStudio(aiProviders, aiSettings);
         // Issue #256 — même base que le reste du panel : un plan payé survit à un redémarrage.
         this.planDrafts = new BuildingPlanDraftStore(config.panelDbPath());
+        this.workshopDeletion = new com.lodygames.rpgquest.panel.building.WorkshopProjectDeletion(config.panelDbPath());
         this.planWorkbench = new BuildingPlanWorkbench(agentStore, planDrafts);
         this.workshopAutopilot = new com.lodygames.rpgquest.panel.building.WorkshopAutopilot(agentStore,
                 planDrafts, audit);
@@ -1133,13 +1136,95 @@ public final class PanelApp {
         String agentId = config.agents().defaultAgentId();
         Map<String, String> q = Http.query(exchange);
         List<WorkshopPages.ProjectRow> rows = new ArrayList<>();
+        var sites = agentPages.buildingSiteDirectory(agentId);
         for (var p : planProjects.list(agentId)) {
             List<BuildingPlanDraft> drafts = planDrafts.forProject(agentId, p.id());
-            rows.add(new WorkshopPages.ProjectRow(p, projectState(p, drafts), drafts.size()));
+            rows.add(new WorkshopPages.ProjectRow(p, projectState(p, drafts), drafts.size(),
+                    projectUsage(agentId, p, drafts, sites)));
         }
         Http.html(exchange, 200, renderPage("Atelier de création", session, WorkshopPages.BASE,
-                WorkshopPages.index(session, rows, importable(agentId), q.get("ok"), q.get("err")),
+                WorkshopPages.index(session, rows, WorkshopProjectQuery.from(q), importable(agentId),
+                        q.get("ok"), q.get("err")),
                 Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    /**
+     * Issue #881 — l'usage en jeu d'un projet : posé (dernier relevé des emplacements), cité par un
+     * portail, état dans la bibliothèque, et geste encore en cours. Lecture seule, aucune requête.
+     */
+    private com.lodygames.rpgquest.panel.building.ProjectUsage projectUsage(String agentId,
+            com.lodygames.rpgquest.panel.building.BuildingProject p, List<BuildingPlanDraft> drafts,
+            com.lodygames.rpgquest.panel.building.BuildingSiteDirectory sites) {
+        String buildingId = p.buildingId();
+        List<String> placedOn = buildingId.isEmpty() ? List.of() : sites.placements().stream()
+                .filter(pl -> pl.buildingId().equalsIgnoreCase(buildingId)).map(pl -> pl.siteId()).toList();
+        List<String> portals = agentPages.portalsUsingBuilding(agentId, buildingId);
+        var catalog = com.lodygames.rpgquest.panel.building.CatalogState.of(agentStore, agentId, buildingId);
+        return com.lodygames.rpgquest.panel.building.ProjectUsage.of(sites.available(), placedOn, portals, catalog,
+                projectBusy(p, drafts));
+    }
+
+    /** Un geste encore en cours sur le projet : le supprimer maintenant laisserait une réponse orpheline. */
+    private String projectBusy(com.lodygames.rpgquest.panel.building.BuildingProject p, List<BuildingPlanDraft> drafts) {
+        if (designRuns.latest(p.id()).map(r -> r.running()).orElse(false)) {
+            return "Une conception automatique est en cours";
+        }
+        for (BuildingPlanDraft d : drafts) {
+            for (BuildingPlanDraftStore.Check check : BuildingPlanDraftStore.Check.values()) {
+                if (planWorkbench.state(d, check).status() == BuildingPlanWorkbench.Status.PENDING) {
+                    return "Une vérification ou un enregistrement de la version " + d.id() + " attend la réponse du serveur";
+                }
+            }
+        }
+        return "";
+    }
+
+    /**
+     * {@code project_delete} (#881) : suppression définitive d'un projet NON utilisé. Tout est revérifié
+     * ici — usage, bibliothèque, geste en cours, case, version vue — l'écran n'est qu'un reflet.
+     */
+    private PlanOutcome projectDelete(Session session, String agentId,
+                                      com.lodygames.rpgquest.panel.building.BuildingProject project, Map<String, String> f) {
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String target = "project=" + project.id() + " building=" + project.buildingId();
+        if (!permissions.can(session.effective(), Permission.BUILDING_WRITE)) {
+            audit.record(session.username(), "building.project.delete", target, "DENIED", "permission", rid);
+            return PlanOutcome.redirect(projectLocation(project.id(), "", null,
+                    "Votre rôle ne permet pas de supprimer un projet. Rien n'a été supprimé."));
+        }
+        if (!"yes".equals(f.get("confirm"))) {
+            return PlanOutcome.redirect(projectLocation(project.id(), "", null,
+                    "Cochez la confirmation pour supprimer le projet. Rien n'a été supprimé."));
+        }
+        List<BuildingPlanDraft> drafts = planDrafts.forProject(agentId, project.id());
+        var usage = projectUsage(agentId, project, drafts, agentPages.buildingSiteDirectory(agentId));
+        if (!usage.deletable()) {
+            audit.record(session.username(), "building.project.delete", target, "DENIED",
+                    String.join(" | ", usage.blockers()), rid);
+            return PlanOutcome.redirect(projectLocation(project.id(), "", null,
+                    "Suppression refusée, rien n'a été supprimé : " + String.join(" ", usage.blockers())));
+        }
+        int expected;
+        try {
+            expected = Integer.parseInt(f.getOrDefault("project_version", "").trim());
+        } catch (NumberFormatException e) {
+            expected = -1;
+        }
+        var outcome = workshopDeletion.delete(project.id(), expected);
+        audit.record(session.username(), "building.project.delete", target,
+                outcome == com.lodygames.rpgquest.panel.building.WorkshopProjectDeletion.Outcome.DELETED ? "OK" : "DENIED",
+                outcome.name(), rid);
+        return switch (outcome) {
+            case DELETED -> PlanOutcome.redirect(WorkshopPages.BASE + "?ok=" + enc("Projet « " + project.name()
+                    + " » supprimé avec ses versions de plan. Bibliothèque, bâtiments posés et emplacements : "
+                    + "inchangés."));
+            case STALE -> PlanOutcome.redirect(projectLocation(project.id(), "", null, "Le projet a été modifié "
+                    + "entre-temps : relisez-le avant de le supprimer. Rien n'a été supprimé."));
+            case BUSY -> PlanOutcome.redirect(projectLocation(project.id(), "", null, "Une conception automatique "
+                    + "vient de démarrer : attendez sa fin. Rien n'a été supprimé."));
+            case NOT_FOUND -> PlanOutcome.redirect(WorkshopPages.BASE + "?ok="
+                    + enc("Ce projet a déjà été supprimé : rien de plus n'a été fait."));
+        };
     }
 
     /** Une phrase d'état pour la liste des projets, dans les mots du parcours. */
@@ -1370,6 +1455,12 @@ public final class PanelApp {
                 return;
             }
             var project = planProjects.find(f.get("id")).filter(p -> !p.archived() && p.agentId().equals(agentId));
+            if (project.isEmpty() && "project_delete".equals(f.getOrDefault("_action", "").trim())) {
+                // #881 : le second clic d'une suppression déjà faite n'est pas une erreur.
+                Http.redirect(exchange, WorkshopPages.BASE + "?ok="
+                        + enc("Ce projet a déjà été supprimé : rien de plus n'a été fait."));
+                return;
+            }
             if (project.isEmpty()) {
                 Http.redirect(exchange, WorkshopPages.BASE + "?err=" + enc("Projet introuvable : rien n'a été fait."));
                 return;
@@ -1398,6 +1489,7 @@ public final class PanelApp {
                 case "design_write" -> designWrite(session, agentId, project.get(), f);
                 case "design_save" -> designSave(session, project.get(), f);
                 case "archive" -> planArchive(session, project.get(), f);
+                case "project_delete" -> projectDelete(session, agentId, project.get(), f);
                 default -> PlanOutcome.redirect(projectLocation(project.get().id(), f.get("draft"), null,
                         "Geste inconnu : rien n'a été fait."));
             };
@@ -1504,8 +1596,12 @@ public final class PanelApp {
                 designDocs.history(project.get().id()), designText, importQuery, importPreview,
                 repairInfo(project.get(), draft), failureInfo(project.get(), drafts, draft),
                 versionAudits(drafts));
+        // #881 : la zone « Supprimer le projet », avec l'usage réel et ce qui serait effacé.
+        String deletion = WorkshopPages.deletionCard(session, project.get(),
+                projectUsage(agentId, project.get(), drafts, agentPages.buildingSiteDirectory(agentId)),
+                workshopDeletion.preview(project.get().id()), view.canWrite());
         Http.html(exchange, 200, renderPage(project.get().name(), session, WorkshopPages.BASE,
-                WorkshopPages.project(view), Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+                WorkshopPages.project(view) + deletion, Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }
 
     /** #828 : le dernier audit de chaque version de l'historique, pour son statut réel. */

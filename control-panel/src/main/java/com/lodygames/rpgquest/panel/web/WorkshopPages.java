@@ -16,6 +16,8 @@ import com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench;
 import com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench.CheckState;
 import com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench.Status;
 import com.lodygames.rpgquest.panel.building.BuildingProject;
+import com.lodygames.rpgquest.panel.building.ProjectUsage;
+import com.lodygames.rpgquest.panel.building.WorkshopProjectDeletion;
 import com.lodygames.rpgquest.panel.building.BuildingSiteView;
 import com.lodygames.rpgquest.panel.building.CatalogState;
 import com.lodygames.rpgquest.panel.building.BuildingVoxels;
@@ -76,12 +78,14 @@ public final class WorkshopPages {
     public record Importable(String siteId, String siteName, String brief, int draftCount) {
     }
 
-    /** Une ligne de la liste : le projet et où il en est, en une phrase. */
-    public record ProjectRow(BuildingProject project, String state, int drafts) {
+    /**
+     * Une ligne de la liste : le projet, où il en est en une phrase, et son usage en jeu (#881).
+     */
+    public record ProjectRow(BuildingProject project, String state, int drafts, ProjectUsage usage) {
     }
 
-    public static String index(Session session, List<ProjectRow> projects, List<Importable> importable,
-                               String notice, String error) {
+    public static String index(Session session, List<ProjectRow> projects, WorkshopProjectQuery query,
+                               List<Importable> importable, String notice, String error) {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("box", "Atelier de création",
                 "Décrivez un bâtiment en français : l'IA en propose un plan, vous le vérifiez, puis vous "
@@ -94,17 +98,24 @@ public final class WorkshopPages {
             sb.append(Ui.empty("Aucun projet pour le moment. Cliquez sur « Nouveau projet » pour "
                     + "décrire votre premier bâtiment."));
         } else {
-            sb.append("<div class=\"ws-grid\">");
-            for (ProjectRow row : projects) {
-                BuildingProject p = row.project();
-                sb.append("<a class=\"card ws-card\" href=\"").append(projectUrl(p.id(), ""))
-                        .append("\"><div class=\"card-body\"><div class=\"ws-card-title\">")
-                        .append(Http.esc(p.name())).append("</div><div class=\"ws-card-state\">")
-                        .append(Http.esc(row.state())).append("</div><div class=\"muted small\">")
-                        .append(row.drafts()).append(" version(s) de plan · modifié le ")
-                        .append(Http.esc(WHEN.format(p.updatedAt()))).append("</div></div></a>");
+            sb.append(projectToolbar(projects, query));
+            List<ProjectRow> shown = query.apply(projects);
+            sb.append("<p class=\"count-note\">").append(shown.size()).append(" projet(s)")
+                    .append(query.narrowed() ? " sur " + projects.size() : "").append("</p>");
+            if (shown.isEmpty()) {
+                sb.append(Ui.empty("search", "Aucun projet ne correspond"
+                        + (query.text().isEmpty() ? "" : " à « " + query.text() + " »")
+                        + (query.filter() == WorkshopProjectQuery.Filter.ALL ? ""
+                                : " dans « " + query.filter().label() + " »") + "."));
+                sb.append("<p><a class=\"btn secondary sm\" href=\"").append(BASE).append("\">")
+                        .append(Icons.icon("back")).append("Effacer la recherche et les filtres</a></p>");
+            } else {
+                sb.append("<div class=\"ws-grid\">");
+                for (ProjectRow row : shown) {
+                    sb.append(projectTile(row));
+                }
+                sb.append("</div>");
             }
-            sb.append("</div>");
         }
 
         if (!importable.isEmpty()) {
@@ -127,6 +138,138 @@ public final class WorkshopPages {
             sb.append("</ul>");
         }
         return sb.toString();
+    }
+
+    /** Recherche, filtres et tri (#881) : un formulaire GET, utilisable sans JavaScript. */
+    private static String projectToolbar(List<ProjectRow> projects, WorkshopProjectQuery query) {
+        StringBuilder sb = new StringBuilder("<form method=\"get\" action=\"").append(BASE)
+                .append("\" class=\"toolbar ws-find\" role=\"search\">");
+        sb.append("<div class=\"search\">").append(Icons.icon("search"))
+                .append("<input type=\"search\" name=\"q\" maxlength=\"").append(WorkshopProjectQuery.MAX_TEXT)
+                .append("\" value=\"").append(Http.esc(query.text()))
+                .append("\" placeholder=\"Nom, identifiant ou description\" aria-label=\"Rechercher un projet\"></div>");
+        if (query.filter() != WorkshopProjectQuery.Filter.ALL) {
+            sb.append(hidden("filtre", query.filter().key()));
+        }
+        sb.append("<label class=\"ws-sort\">Trier <select name=\"tri\" class=\"form-select form-select-sm\">");
+        for (WorkshopProjectQuery.Sort s : WorkshopProjectQuery.Sort.values()) {
+            sb.append("<option value=\"").append(s.key()).append("\"").append(s == query.sort() ? " selected" : "")
+                    .append(">").append(Http.esc(s.label())).append("</option>");
+        }
+        sb.append("</select></label><button class=\"btn sm\" type=\"submit\">")
+                .append(Icons.icon("search")).append("Rechercher</button>");
+        if (query.narrowed()) {
+            sb.append("<a class=\"btn secondary sm\" href=\"").append(BASE).append("\">").append("Effacer</a>");
+        }
+        sb.append("</form><nav class=\"chips ws-filters\" aria-label=\"Filtrer les projets\">");
+        for (WorkshopProjectQuery.Filter f : WorkshopProjectQuery.Filter.values()) {
+            int n = query.count(projects, f);
+            if (n == 0 && f != WorkshopProjectQuery.Filter.ALL && f != query.filter()) {
+                continue;
+            }
+            boolean on = f == query.filter();
+            sb.append("<a class=\"chip").append(on ? " on" : "").append("\" href=\"").append(Http.esc(query.url(f)))
+                    .append("\"").append(on ? " aria-current=\"true\"" : "").append(">")
+                    .append(Http.esc(f.label())).append(" (").append(n).append(")</a>");
+        }
+        return sb.append("</nav>").toString();
+    }
+
+    /** Une tuile : son nom mène au projet ; l'usage en jeu y est toujours lisible (#881). */
+    private static String projectTile(ProjectRow row) {
+        BuildingProject p = row.project();
+        ProjectUsage u = row.usage();
+        StringBuilder sb = new StringBuilder("<div class=\"card ws-card\"><div class=\"card-body\">");
+        sb.append("<a class=\"ws-card-title\" href=\"").append(projectUrl(p.id(), "")).append("\">")
+                .append(Http.esc(p.name())).append("</a>");
+        if (!p.buildingId().isEmpty()) {
+            sb.append(" ").append(Ui.id(p.buildingId()));
+        }
+        sb.append("<div class=\"ws-card-state\">").append(Http.esc(row.state())).append("</div>");
+        sb.append("<div class=\"ws-card-usage\">").append(usagePill(u));
+        if (u.usage() == ProjectUsage.Usage.USED && !u.sites().isEmpty()) {
+            sb.append(" <span class=\"small\">").append(u.sites().size()).append(" emplacement(s)</span>");
+        }
+        sb.append(" ").append(Ui.badge(u.catalog().label())).append("</div>");
+        sb.append("<div class=\"muted small\">").append(row.drafts()).append(" version(s) de plan · modifié le ")
+                .append(Http.esc(WHEN.format(p.updatedAt()))).append("</div>");
+        if (u.usage() == ProjectUsage.Usage.USED) {
+            sb.append("<a class=\"small\" href=\"").append(usedWhereUrl(u)).append("\">")
+                    .append(Icons.icon("world")).append("Voir où utilisé</a>");
+        }
+        return sb.append("</div></div>").toString();
+    }
+
+    /** Pastille d'usage : glyphe + texte, jamais la couleur seule. */
+    static String usagePill(ProjectUsage u) {
+        return switch (u.usage()) {
+            case USED -> Ui.pill(u.usage().label(), "delivered", "●");
+            case UNUSED -> Ui.pill(u.usage().label(), "neutral", "○");
+            case UNCERTAIN -> Ui.pill(u.usage().label(), "pending", "?");
+        };
+    }
+
+    private static String usedWhereUrl(ProjectUsage u) {
+        return u.sites().isEmpty() && !u.portals().isEmpty() ? "/portals" : "/buildings/sites";
+    }
+
+    // ================================================================================
+    //  Supprimer le projet (#881)
+    // ================================================================================
+
+    /**
+     * La zone « Supprimer le projet » de la fiche : l'usage, ce qui serait effacé et conservé, et le
+     * formulaire seulement si la suppression est permise. Le serveur revérifie tout à la soumission.
+     */
+    public static String deletionCard(Session session, BuildingProject p, ProjectUsage usage,
+                                      WorkshopProjectDeletion.Preview preview, boolean canWrite) {
+        StringBuilder sb = new StringBuilder("<details class=\"npc-registry ws-delete\" id=\"supprimer\">");
+        sb.append("<summary>").append(Icons.icon("trash")).append("Supprimer le projet — ")
+                .append(Http.esc(usage.usage().label())).append("</summary>");
+        sb.append("<p>").append(usagePill(usage)).append(" ").append(Ui.badge(usage.catalog().label())).append("</p>");
+        if (!usage.sites().isEmpty() || !usage.portals().isEmpty()) {
+            sb.append("<p>Utilisé par : ");
+            List<String> where = new java.util.ArrayList<>();
+            usage.sites().forEach(s -> where.add("emplacement " + Ui.id(s)));
+            usage.portals().forEach(s -> where.add("portail " + Ui.id(s)));
+            sb.append(String.join(", ", where)).append(" — <a href=\"").append(usedWhereUrl(usage)).append("\">")
+                    .append("Voir où utilisé</a></p>");
+        }
+        List<String> blockers = usage.blockers();
+        sb.append("<p><strong>").append(blockers.isEmpty() ? "Serait supprimé définitivement"
+                        : "Si la suppression était permise, serait supprimé")
+                .append("</strong> (panel uniquement) : la fiche du projet, ")
+                .append(preview.versions()).append(" version(s) de plan et ").append(preview.revisions())
+                .append(" révision(s), ").append(preview.designs()).append(" conception(s) détaillée(s), ")
+                .append(preview.runs()).append(" conception(s) automatique(s), ").append(preview.images())
+                .append(" image(s) de référence").append(preview.images() > 0 ? " (" + kib(preview.imageBytes()) + ")" : "")
+                .append(".</p>");
+        sb.append("<p><strong>Conservé</strong> : le bâtiment de la bibliothèque et ses versions archivées, les "
+                + "bâtiments posés, les emplacements et leurs sauvegardes de terrain, les portails, l'historique "
+                + "des actions de l'agent (un plan y reste importable), le journal IA et le journal d'audit. "
+                + "Aucun bloc du monde n'est touché.</p>");
+        if (!blockers.isEmpty()) {
+            sb.append(Ui.banner("warning", "<strong>Suppression impossible pour l'instant.</strong><ul class=\"tight\">"
+                    + blockers.stream().map(b -> "<li>" + Http.esc(b) + "</li>").reduce("", String::concat)
+                    + "</ul>" + (usage.catalog().inLibrary()
+                            ? "<a href=\"/buildings/library\">Ouvrir la Bibliothèque</a>" : "")));
+        } else if (!canWrite) {
+            sb.append("<p class=\"muted\">Votre rôle ne permet pas de supprimer un projet.</p>");
+        } else {
+            sb.append("<form method=\"post\" action=\"").append(BASE).append("/project\" class=\"actform\">")
+                    .append(hidden("_csrf", session.csrfToken())).append(hidden("_action", "project_delete"))
+                    .append(hidden("id", p.id())).append(hidden("project_version", String.valueOf(p.version())))
+                    .append("<label class=\"form-check\"><input class=\"form-check-input\" type=\"checkbox\" "
+                            + "name=\"confirm\" value=\"yes\" required> Je supprime définitivement le projet « ")
+                    .append(Http.esc(p.name())).append(" » et ses versions de plan. Cette action est "
+                            + "irréversible.</label><div class=\"btnrow\"><button class=\"btn sm danger\" "
+                            + "type=\"submit\">").append(Icons.icon("trash")).append("Supprimer le projet</button></div></form>");
+        }
+        return sb.append("</details>").toString();
+    }
+
+    private static String kib(long bytes) {
+        return bytes < 1024 ? bytes + " o" : (bytes / 1024) + " Kio";
     }
 
     // ================================================================================

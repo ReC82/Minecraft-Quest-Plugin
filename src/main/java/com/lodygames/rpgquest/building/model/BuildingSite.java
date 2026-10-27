@@ -49,10 +49,12 @@ import java.time.Instant;
  * @param createdBy   pseudo de l'administrateur créateur, ou vide si l'identité n'était pas
  *                    disponible — jamais inventé
  * @param createdAt   instant de création
+ * @param kind        type d'emplacement (issue #568) : {@link SiteKind#BUILDING} par défaut,
+ *                    {@link SiteKind#PORTAL} pour n'accepter qu'une arche de portail
  */
 public record BuildingSite(String id, String name, String description, String aiBrief, String world,
                            int x, int y, int z, Facing facing, SiteStatus status,
-                           String createdBy, Instant createdAt) {
+                           String createdBy, Instant createdAt, SiteKind kind) {
 
     /** Libellé donné à un emplacement tout juste créé, avant tout renommage. */
     public static final String DEFAULT_NAME = "Nouvel emplacement";
@@ -84,6 +86,15 @@ public record BuildingSite(String id, String name, String description, String ai
         facing = facing == null ? Facing.NORTH : facing;
         status = status == null ? SiteStatus.EMPTY : status;
         createdBy = createdBy == null ? "" : createdBy.trim();
+        kind = kind == null ? SiteKind.BUILDING : kind;
+    }
+
+    /** Emplacement de bâtiment, comme tous ceux d'avant #568. */
+    public BuildingSite(String id, String name, String description, String aiBrief, String world,
+                        int x, int y, int z, Facing facing, SiteStatus status,
+                        String createdBy, Instant createdAt) {
+        this(id, name, description, aiBrief, world, x, y, z, facing, status, createdBy, createdAt,
+                SiteKind.BUILDING);
     }
 
     /**
@@ -103,25 +114,25 @@ public record BuildingSite(String id, String name, String description, String ai
     /** Même emplacement, nom remplacé. */
     public BuildingSite withName(String newName) {
         return new BuildingSite(id, newName, description, aiBrief, world, x, y, z, facing, status,
-                createdBy, createdAt);
+                createdBy, createdAt, kind);
     }
 
     /** Même emplacement, description remplacée. */
     public BuildingSite withDescription(String newDescription) {
         return new BuildingSite(id, name, newDescription, aiBrief, world, x, y, z, facing, status,
-                createdBy, createdAt);
+                createdBy, createdAt, kind);
     }
 
     /** Même emplacement, brief architectural remplacé (issue #94). */
     public BuildingSite withAiBrief(String newBrief) {
         return new BuildingSite(id, name, description, newBrief, world, x, y, z, facing, status,
-                createdBy, createdAt);
+                createdBy, createdAt, kind);
     }
 
     /** Même emplacement, orientation corrigée — la position ne bouge pas. */
     public BuildingSite withFacing(Facing newFacing) {
         return new BuildingSite(id, name, description, aiBrief, world, x, y, z, newFacing, status,
-                createdBy, createdAt);
+                createdBy, createdAt, kind);
     }
 
     /**
@@ -132,7 +143,16 @@ public record BuildingSite(String id, String name, String description, String ai
      */
     public BuildingSite withStatus(SiteStatus newStatus) {
         return new BuildingSite(id, name, description, aiBrief, world, x, y, z, facing, newStatus,
-                createdBy, createdAt);
+                createdBy, createdAt, kind);
+    }
+
+    /**
+     * Même emplacement, type changé (issue #568). Ni la position, ni l'orientation, ni l'état ne
+     * bougent : c'est la règle de pose qui change.
+     */
+    public BuildingSite withKind(SiteKind newKind) {
+        return new BuildingSite(id, name, description, aiBrief, world, x, y, z, facing, status,
+                createdBy, createdAt, newKind);
     }
 
     /** Un brief architectural est-il renseigné ? C'est la précondition d'une génération. */

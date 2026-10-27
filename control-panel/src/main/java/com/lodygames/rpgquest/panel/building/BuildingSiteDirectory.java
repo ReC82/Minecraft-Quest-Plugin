@@ -44,7 +44,7 @@ public record BuildingSiteDirectory(List<BuildingSiteView> sites, List<String> w
                     str(m.get("aiBrief")),
                     str(m.get("world")), intOr(m.get("x")), intOr(m.get("y")), intOr(m.get("z")),
                     str(m.get("facing")), str(m.get("status")), str(m.get("createdBy")),
-                    str(m.get("createdAt")), bool(m.get("worldLoaded"))));
+                    str(m.get("createdAt")), bool(m.get("worldLoaded")), str(m.get("kind"))));
         }
         // Les mondes viennent du serveur, jamais recalculés ici : lui seul sait ce qu'il porte.
         List<String> worlds = asList(details.get("worlds")).stream()

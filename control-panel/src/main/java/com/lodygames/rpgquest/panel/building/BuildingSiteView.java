@@ -18,10 +18,15 @@ import java.util.Locale;
  *                    énumération avec le plugin
  * @param worldLoaded le monde est-il chargé sur le serveur au moment du relevé ? Un emplacement
  *                    dans un monde déchargé reste valide : il faut le dire, pas le cacher
+ * @param kind        type d'emplacement (issue #568) : {@code BUILDING} (défaut, y compris pour un
+ *                    relevé d'un plugin plus ancien) ou {@code PORTAL}
  */
 public record BuildingSiteView(String id, String name, String description, String aiBrief,
                                String world, int x, int y, int z, String facing, String status,
-                               String createdBy, String createdAt, boolean worldLoaded) {
+                               String createdBy, String createdAt, boolean worldLoaded, String kind) {
+
+    /** Les types d'emplacement, identiques à {@code SiteKind} côté plugin (issue #568). */
+    public static final List<String> KINDS = List.of("BUILDING", "PORTAL");
 
     /** Les quatre orientations proposées à l'écran, dans l'ordre de la boussole. */
     public static final List<String> FACINGS = List.of("NORTH", "EAST", "SOUTH", "WEST");
@@ -47,6 +52,34 @@ public record BuildingSiteView(String id, String name, String description, Strin
         status = status == null ? "" : status.trim().toUpperCase(Locale.ROOT);
         createdBy = createdBy == null ? "" : createdBy.trim();
         createdAt = createdAt == null ? "" : createdAt.trim();
+        kind = kind == null || !KINDS.contains(kind.trim().toUpperCase(Locale.ROOT))
+                ? "BUILDING" : kind.trim().toUpperCase(Locale.ROOT);
+    }
+
+    /** Emplacement de bâtiment : relevé d'avant #568. */
+    public BuildingSiteView(String id, String name, String description, String aiBrief,
+                            String world, int x, int y, int z, String facing, String status,
+                            String createdBy, String createdAt, boolean worldLoaded) {
+        this(id, name, description, aiBrief, world, x, y, z, facing, status, createdBy, createdAt,
+                worldLoaded, "BUILDING");
+    }
+
+    /** Emplacement de portail : il ne reçoit qu'une arche (issue #568). */
+    public boolean portal() {
+        return "PORTAL".equals(kind);
+    }
+
+    /** Type en français, pour l'écran. */
+    public String kindLabel() {
+        return portal() ? "portail" : "bâtiment";
+    }
+
+    /**
+     * Ce type d'emplacement accepte-t-il cette construction ? Même règle que {@code SiteKind}
+     * côté plugin — l'écran s'en sert pour filtrer ses listes, le serveur refuse de toute façon.
+     */
+    public boolean accepts(BuildingDefinitionView building) {
+        return building != null && building.portal() == portal();
     }
 
     /** Position lisible, dans l'ordre où un administrateur la lit en jeu. */
@@ -120,6 +153,6 @@ public record BuildingSiteView(String id, String name, String description, Strin
      */
     public String searchText() {
         return (id + " " + name + " " + world + " " + x + " " + y + " " + z + " "
-                + facingLabel() + " " + description).toLowerCase(Locale.ROOT);
+                + facingLabel() + " " + kindLabel() + " " + description).toLowerCase(Locale.ROOT);
     }
 }

@@ -300,6 +300,13 @@ public final class PortalOverview {
             issues.add(new Issue("PORTAL_SITE_MISSING", "warning", "L'emplacement « " + site + " » cité par ce "
                     + "portail n'existe plus : sa zone reste celle enregistrée, mais il ne peut pas être activé."));
         }
+        if (linked.isPresent() && linked.get().kind() != com.lodygames.rpgquest.building.model.SiteKind.PORTAL) {
+            // #568 : sans effet sur la téléportation ; l'emplacement d'une arche posée avant les
+            // types d'emplacement est resté « bâtiment » et peut être reclassé sans toucher au monde.
+            issues.add(new Issue("PORTAL_SITE_KIND", "info", "L'emplacement « " + site + " » est de type "
+                    + "« bâtiment » : passez-le en « portail » (page Emplacements) pour qu'aucun bâtiment "
+                    + "ne puisse y être posé à la place de l'arche."));
+        }
         PortalBuildingLink.Status link = PortalBuildingLink.status(p,
                 site.isEmpty() ? Optional.empty() : in.buildings().apply(site));
         if (link != PortalBuildingLink.Status.NONE && link != PortalBuildingLink.Status.OK) {

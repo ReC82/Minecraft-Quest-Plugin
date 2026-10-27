@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.database;
 
 import com.lodygames.rpgquest.building.model.BuildingSite;
 import com.lodygames.rpgquest.building.model.Facing;
+import com.lodygames.rpgquest.building.model.SiteKind;
 import com.lodygames.rpgquest.building.model.SiteStatus;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -34,8 +35,8 @@ public final class BuildingSiteRepository {
     private static final String INSERT = """
             INSERT INTO building_sites
                 (id, name, description, ai_brief, world, x, y, z, facing, status, created_by,
-                 created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 created_at, site_kind)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
     private static final String SELECT_ALL = "SELECT * FROM building_sites";
     private static final String UPDATE_NAME = "UPDATE building_sites SET name = ? WHERE id = ?";
@@ -44,6 +45,7 @@ public final class BuildingSiteRepository {
     private static final String UPDATE_AI_BRIEF =
             "UPDATE building_sites SET ai_brief = ? WHERE id = ?";
     private static final String UPDATE_FACING = "UPDATE building_sites SET facing = ? WHERE id = ?";
+    private static final String UPDATE_KIND = "UPDATE building_sites SET site_kind = ? WHERE id = ?";
     private static final String UPDATE_STATUS = "UPDATE building_sites SET status = ? WHERE id = ?";
     private static final String DELETE = "DELETE FROM building_sites WHERE id = ?";
 
@@ -105,6 +107,7 @@ public final class BuildingSiteRepository {
                 statement.setString(10, site.status().name());
                 statement.setString(11, site.createdBy());
                 statement.setString(12, site.createdAt().toString());
+                statement.setString(13, site.kind().name());
                 statement.executeUpdate();
                 return null;
             }
@@ -132,6 +135,11 @@ public final class BuildingSiteRepository {
      */
     public CompletableFuture<Integer> updateStatus(String id, SiteStatus status) {
         return update(UPDATE_STATUS, status.name(), id);
+    }
+
+    /** Change le type d'un emplacement (issue #568). */
+    public CompletableFuture<Integer> updateKind(String id, SiteKind kind) {
+        return update(UPDATE_KIND, kind.name(), id);
     }
 
     public CompletableFuture<Integer> updateFacing(String id, Facing facing) {
@@ -179,7 +187,20 @@ public final class BuildingSiteRepository {
                 Facing.of(resultSet.getString("facing")).orElse(Facing.NORTH),
                 SiteStatus.of(resultSet.getString("status")),
                 resultSet.getString("created_by"),
-                Instant.parse(resultSet.getString("created_at")));
+                Instant.parse(resultSet.getString("created_at")),
+                kind(resultSet));
+    }
+
+    /**
+     * Le type (issue #568, colonne V45), ou {@code BUILDING} si la colonne manque ou porte une
+     * valeur inconnue — le comportement de tous les emplacements d'avant #568.
+     */
+    private static SiteKind kind(ResultSet resultSet) {
+        try {
+            return SiteKind.of(resultSet.getString("site_kind"));
+        } catch (SQLException absent) {
+            return SiteKind.BUILDING;
+        }
     }
 
     /** Le brief, ou vide si la colonne n'est pas (encore) là. Jamais une erreur de chargement. */

@@ -2929,10 +2929,16 @@ public final class AgentPages {
         var wanted = library.find(str(q.get("place")).trim());
         if (wanted.isPresent()) {
             long free = shown.stream().filter(site -> directory.placementFor(site.id()).isEmpty()
-                    && !"OCCUPIED".equals(site.status())).count();
+                    && !"OCCUPIED".equals(site.status()) && site.accepts(wanted.get())).count();
+            // #568 : une arche ne va que sur un emplacement de portail, et inversement.
+            String kindNote = wanted.get().portal()
+                    ? " C'est une arche : seuls les emplacements de type <strong>portail</strong> "
+                            + "l'acceptent."
+                    : " Seuls les emplacements de type <strong>bâtiment</strong> l'acceptent.";
             sb.append(Ui.banner("info", "Poser « " + Http.esc(wanted.get().name()) + " » : ouvrez "
-                    + "la fiche d'un emplacement <strong>libre</strong> (" + free + " sur cette page), "
-                    + "le bâtiment y est déjà choisi. Rien n'est construit avant votre confirmation."));
+                    + "la fiche d'un emplacement <strong>libre</strong> et compatible (" + free
+                    + " sur cette page), le bâtiment y est déjà choisi." + kindNote
+                    + " Rien n'est construit avant votre confirmation."));
         }
         String wantedId = wanted.map(
                 com.lodygames.rpgquest.panel.building.BuildingDefinitionView::id).orElse("");
@@ -2953,15 +2959,22 @@ public final class AgentPages {
                     + "n'est pas chargé."));
         }
 
+        // #568 : filtre par type d'emplacement — les emplacements de portail se retrouvent d'un clic.
+        long portalSites = shown.stream().filter(site -> site.portal()).count();
+        String chips = filterBtn("", "Tous · " + shown.size(), true)
+                + filterBtn("building", "Bâtiments · " + (shown.size() - portalSites), false,
+                        "Aucun emplacement de bâtiment")
+                + filterBtn("portal", "Portails · " + portalSites, false,
+                        "Aucun emplacement de portail — ouvrir une fiche, « Type d'emplacement »");
         sb.append(Ui.searchToolbar("buildsites",
-                "Rechercher un emplacement (identifiant, nom, monde, position…)", ""));
+                "Rechercher un emplacement (identifiant, nom, monde, position…)", chips));
         sb.append("<div class=\"accordion npc-accordion\" id=\"buildsite-accordion\">");
         int index = 0;
         for (var site : shown) {
             sb.append(buildingSiteItem(session, agentId, site, index++, canWrite, canDelete,
                     canPlace, canRollback, directory, library, preview, wantedId));
         }
-        sb.append("</div>");
+        sb.append("</div>").append(filterEmpty("buildsites", "Aucun emplacement"));
         if (shown.isEmpty()) {
             sb.append(Ui.empty("world", "Aucun emplacement dans ce monde."));
         }
@@ -3027,7 +3040,8 @@ public final class AgentPages {
         String slug = "buildsite-" + index + "-" + site.id().replaceAll("[^a-z0-9_-]", "-");
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"buildsites\" ")
-                .append("data-filter-text=\"").append(Http.esc(site.searchText())).append("\">");
+                .append("data-filter-cat=\"").append(site.portal() ? "portal" : "building")
+                .append("\" data-filter-text=\"").append(Http.esc(site.searchText())).append("\">");
         sb.append("<h3 class=\"accordion-header\">");
         sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" ")
                 .append("data-bs-toggle=\"collapse\" data-bs-target=\"#").append(slug)
@@ -3039,6 +3053,8 @@ public final class AgentPages {
                 .append(Http.esc(site.world())).append(' ')
                 .append(Http.esc(site.positionLabel())).append("</span>");
         sb.append("</span><span class=\"npc-head-badges\">");
+        sb.append("<span class=\"badge ").append(site.portal() ? "text-bg-primary" : "text-bg-info")
+                .append("\">").append(Http.esc(site.portal() ? "Portail" : "Bâtiment")).append("</span>");
         sb.append("<span class=\"badge text-bg-secondary\">")
                 .append(Http.esc(site.facingLabel())).append("</span>");
         sb.append("<span class=\"badge text-bg-light text-dark\">")
@@ -3061,6 +3077,9 @@ public final class AgentPages {
         dlRow(sb, "Position", "<code class=\"tid\">" + Http.esc(site.positionLabel()) + "</code>");
         dlRow(sb, "Orientation", Http.esc(site.facingLabel())
                 + " <code class=\"tid\">" + Http.esc(site.facing()) + "</code>");
+        dlRow(sb, "Type", Http.esc(site.kindLabel()) + " <span class=\"muted\">— "
+                + (site.portal() ? "n'accepte qu'une arche de portail"
+                        : "accepte un bâtiment ou une décoration, pas une arche") + "</span>");
         dlRow(sb, "État", Http.esc(site.statusLabel()));
         dlRow(sb, "Créé le", Http.esc(site.createdAtLabel()));
         dlRow(sb, "Créé par", site.hasAuthor() ? Http.esc(site.createdBy())
@@ -3081,6 +3100,7 @@ public final class AgentPages {
             dlRow(sb, "Utilisé par le portail", links.toString());
         }
         sb.append("</dl>");
+        sb.append(siteKindMismatch(site, directory, library));
         sb.append(legacyBuildingBrief(session, agentId, site));
 
         sb.append(buildingPlacementSection(session, agentId, site, directory, library, preview,
@@ -3091,6 +3111,7 @@ public final class AgentPages {
             sb.append(buildingSiteRenameForm(session, agentId, site));
             sb.append(buildingSiteDescribeForm(session, agentId, site));
             sb.append(buildingSiteFacingForm(session, agentId, site));
+            sb.append(buildingSiteKindForm(session, agentId, site));
         }
         if (canDelete) {
             sb.append(buildingSiteDeleteZone(session, agentId, site,
@@ -3479,6 +3500,11 @@ public final class AgentPages {
         sb.append("<label class=\"form-label\">Bâtiment</label>");
         sb.append("<select class=\"form-select\" name=\"building\">");
         for (var definition : library.buildings()) {
+            // #568 : on ne propose en remplacement que ce que le type de l'emplacement accepte ; le
+            // bâtiment actuel reste listé (réorienter ne change pas de construction).
+            if (!site.accepts(definition) && !definition.id().equals(placed.buildingId())) {
+                continue;
+            }
             sb.append("<option value=\"").append(Http.esc(definition.id())).append("\"")
                     .append(definition.id().equals(placed.buildingId()) ? " selected" : "")
                     .append('>').append(Http.esc(definition.name())).append("  ·  ")
@@ -3656,10 +3682,18 @@ public final class AgentPages {
                     + " Aucun bâtiment ne peut être posé."));
             return sb.toString();
         }
-        var placeable = library.placeable();
+        var placeable = library.placeable().stream().filter(site::accepts).toList();
         if (placeable.isEmpty()) {
-            sb.append("<p class=\"field-help\">Aucun bâtiment posable : la bibliothèque est vide, "
-                    + "ou aucun schematic n'est présent sur le serveur.</p>");
+            // #568 : la liste ne propose que ce que le type de l'emplacement accepte.
+            sb.append("<p class=\"field-help\">").append(site.portal()
+                    ? "Aucune arche de portail posable : c'est un emplacement de <strong>portail</strong>, "
+                            + "il n'accepte qu'une arche (type « Arche de portail » dans l'Atelier)."
+                    : library.placeable().isEmpty()
+                            ? "Aucun bâtiment posable : la bibliothèque est vide, ou aucun schematic "
+                                    + "n'est présent sur le serveur."
+                            : "Aucun bâtiment posable sur un emplacement de <strong>bâtiment</strong> "
+                                    + "(les arches de portail vont sur un emplacement de portail).")
+                    .append("</p>");
             return sb.toString();
         }
         if (!site.worldLoaded()) {
@@ -3708,7 +3742,10 @@ public final class AgentPages {
             sb.append("</select><p class=\"field-help\">La façade du bâtiment sera tournée vers "
                             + "l'orientation de l'emplacement (<strong>")
                     .append(Http.esc(site.facingLabel()))
-                    .append("</strong>).</p></div>");
+                    .append("</strong>). ")
+                    .append(site.portal() ? "Emplacement de portail : seules les arches sont proposées."
+                            : "Emplacement de bâtiment : les arches de portail ne sont pas proposées.")
+                    .append("</p></div>");
             sb.append(mutationConsent("building.placement.preview", "", null));
             sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
                     + "type=\"submit\">").append(Icons.icon("world"))
@@ -3925,6 +3962,56 @@ public final class AgentPages {
                 + "type=\"submit\">").append(Icons.icon("save"))
                 .append("Changer l'orientation</button></div></form>");
         return sb.toString();
+    }
+
+    /**
+     * Type d'emplacement (issue #568). Le serveur refuse un type qui ne convient pas à ce qui est
+     * posé ; aucun bloc du monde n'est touché.
+     */
+    private String buildingSiteKindForm(Session session, String agentId,
+                                        com.lodygames.rpgquest.panel.building.BuildingSiteView site) {
+        StringBuilder sb = new StringBuilder(
+                formStart(session, agentId, "building.site.kind", "/buildings/sites", ""));
+        sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(site.id()))
+                .append("\">");
+        sb.append("<div class=\"field\"><label>Type d'emplacement</label><select name=\"kind\">");
+        for (String[] option : new String[][] {{"BUILDING", "Bâtiment — bâtiment ou décoration"},
+                {"PORTAL", "Portail — arche de portail uniquement"}}) {
+            sb.append("<option value=\"").append(option[0]).append('"')
+                    .append(option[0].equals(site.kind()) ? " selected" : "").append('>')
+                    .append(Http.esc(option[1])).append("</option>");
+        }
+        sb.append("</select><p class=\"field-help\">Décide ce que l'emplacement accepte à la pose. "
+                + "Le serveur refuse le changement si ce qui est déjà posé ne convient pas au "
+                + "nouveau type. Aucun bloc du monde n'est touché.</p></div>");
+        sb.append(mutationConsent("building.site.kind", "", null));
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
+                + "type=\"submit\">").append(Icons.icon("save"))
+                .append("Changer le type</button></div></form>");
+        return sb.toString();
+    }
+
+    /**
+     * Avertit quand ce qui est posé ne correspond pas au type de l'emplacement (issue #568) — cas
+     * d'une arche posée avant la migration sur un emplacement resté « bâtiment ».
+     */
+    static String siteKindMismatch(com.lodygames.rpgquest.panel.building.BuildingSiteView site,
+                                   com.lodygames.rpgquest.panel.building.BuildingSiteDirectory directory,
+                                   com.lodygames.rpgquest.panel.building.BuildingLibraryDirectory library) {
+        var placed = directory.placementFor(site.id());
+        if (placed.isEmpty()) {
+            return "";
+        }
+        var building = library.find(placed.get().buildingId());
+        if (building.isEmpty() || site.accepts(building.get())) {
+            return "";
+        }
+        return Ui.banner("warning", building.get().portal()
+                ? "Une arche de portail est posée sur cet emplacement de <strong>bâtiment</strong> "
+                        + "(posée avant les types d'emplacement). Passez le type à "
+                        + "<strong>Portail</strong> ci-dessous : rien n'est modifié dans le monde."
+                : "Un bâtiment est posé sur cet emplacement de <strong>portail</strong>. Repassez le "
+                        + "type à <strong>Bâtiment</strong> ci-dessous.");
     }
 
     /**

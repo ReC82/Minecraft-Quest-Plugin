@@ -412,7 +412,15 @@ public interface AgentActions {
      */
     record BuildingSiteSummary(String id, String name, String description, String aiBrief,
                                String world, int x, int y, int z, String facing, String status,
-                               String createdBy, String createdAt, boolean worldLoaded) {
+                               String createdBy, String createdAt, boolean worldLoaded, String kind) {
+
+        /** Emplacement de bâtiment, comme tous ceux d'avant #568. */
+        BuildingSiteSummary(String id, String name, String description, String aiBrief,
+                            String world, int x, int y, int z, String facing, String status,
+                            String createdBy, String createdAt, boolean worldLoaded) {
+            this(id, name, description, aiBrief, world, x, y, z, facing, status, createdBy,
+                    createdAt, worldLoaded, "BUILDING");
+        }
     }
 
     /**
@@ -2175,6 +2183,15 @@ public interface AgentActions {
      * {@code ALREADY_COMPLETED}, {@code OFFLINE}, {@code UNKNOWN_QUEST}) + message humain +
      * effets résumés (récompenses, quêtes complétées…).
      */
+    /**
+     * Change le type d'un emplacement (issue #568). Par défaut indisponible : seule la façade
+     * Bukkit connaît les placements qui conditionnent le changement.
+     */
+    default CompletableFuture<MutationResult> buildingSiteKind(String id, String kind) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "UNAVAILABLE",
+                "Le type d'emplacement n'est pas modifiable sur ce serveur."));
+    }
+
     /**
      * Retire un bâtiment de la bibliothèque (issue #284). Par défaut indisponible : seule la façade
      * Bukkit sait déplacer les fichiers du serveur.

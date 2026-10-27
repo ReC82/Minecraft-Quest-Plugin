@@ -69,6 +69,45 @@ class BuildingSiteDirectoryTest {
         assertTrue(view.worldLoaded());
     }
 
+    /** Issue #568 : type lu du relevé ; absent (plugin antérieur) ou inconnu ⇒ bâtiment. */
+    @Test
+    void theSiteKindIsProjectedAndDefaultsToBuilding() {
+        Map<String, Object> portal = site("buildsite_0002", "world_hub", 0, 64, 0, "NORTH");
+        portal.put("kind", "portal");
+        Map<String, Object> odd = site("buildsite_0003", "world_hub", 9, 64, 9, "NORTH");
+        odd.put("kind", "CATHEDRAL");
+        BuildingSiteDirectory dir = directory(List.of(
+                site("buildsite_0001", "world_hub", 712, 67, -702, "WEST"), portal, odd),
+                List.of("world_hub"));
+
+        assertEquals("BUILDING", dir.find("buildsite_0001").orElseThrow().kind());
+        assertTrue(dir.find("buildsite_0002").orElseThrow().portal());
+        assertEquals("portail", dir.find("buildsite_0002").orElseThrow().kindLabel());
+        assertEquals("BUILDING", dir.find("buildsite_0003").orElseThrow().kind());
+    }
+
+    /** Même règle que le plugin : arche ⇔ emplacement de portail. */
+    @Test
+    void aPortalSiteOnlyAcceptsArchesAndABuildingSiteEverythingElse() {
+        BuildingDefinitionView hut = new BuildingDefinitionView("hut", "Hutte", "", 7, 6, 5, 3, 1, 0,
+                "NORTH", List.of(), "hut.schem", true, 1, false, "habitable", "");
+        BuildingDefinitionView fountain = new BuildingDefinitionView("f", "Fontaine", "", 3, 3, 3, 1, 0, 1,
+                "NORTH", List.of(), "f.schem", true, 1, false, "decoration", "");
+        BuildingDefinitionView arch = new BuildingDefinitionView("arch", "Arche", "", 5, 6, 2, 2, 0, 0,
+                "NORTH", List.of(), "arch.schem", true, 1, false, "portal", "");
+        BuildingSiteView building = new BuildingSiteView("buildsite_0001", "x", "", "", "w", 0, 0, 0,
+                "NORTH", "EMPTY", "", "", true);
+        BuildingSiteView portal = new BuildingSiteView("buildsite_0002", "x", "", "", "w", 0, 0, 0,
+                "NORTH", "EMPTY", "", "", true, "PORTAL");
+
+        assertTrue(building.accepts(hut));
+        assertTrue(building.accepts(fountain));
+        assertFalse(building.accepts(arch));
+        assertTrue(portal.accepts(arch));
+        assertFalse(portal.accepts(hut));
+        assertFalse(portal.accepts(fountain));
+    }
+
     @Test
     void theFourFacingsHaveAFrenchLabel() {
         assertEquals("nord", view("NORTH").facingLabel());

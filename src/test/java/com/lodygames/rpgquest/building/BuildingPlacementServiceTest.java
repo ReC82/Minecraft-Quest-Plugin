@@ -10,6 +10,7 @@ import com.lodygames.rpgquest.building.model.BuildingFootprint;
 import com.lodygames.rpgquest.building.model.BuildingSite;
 import com.lodygames.rpgquest.building.model.BuildingSiteAnchor;
 import com.lodygames.rpgquest.building.model.Facing;
+import com.lodygames.rpgquest.building.model.SiteKind;
 import com.lodygames.rpgquest.building.model.SiteStatus;
 import com.lodygames.rpgquest.database.BuildingPlacementRepository;
 import com.lodygames.rpgquest.database.BuildingSiteRepository;
@@ -425,6 +426,114 @@ class BuildingPlacementServiceTest {
 
         assertEquals(-1L, preview.nonAirBlocks());
         assertTrue(preview.placeable());
+    }
+
+    // ---- Type d'emplacement (issue #568) -------------------------------------------------------
+
+    /** Ajoute une arche de portail (mêmes dimensions que la hutte) à la bibliothèque. */
+    private void addArch() throws Exception {
+        Files.writeString(tempDir.resolve("buildings").resolve("test_arch_01.yml"), """
+                id: test_arch_01
+                name: "Arche de test"
+                schematic: test_arch_01.schem
+                kind: portal
+                size:
+                  x: 7
+                  y: 6
+                  z: 5
+                anchor:
+                  x: 3
+                  y: 1
+                  z: 0
+                front: NORTH
+                version: 1
+                """);
+        library.reload();
+        gateway.files.add("test_arch_01.schem");
+    }
+
+    private BuildingSite portalSite() throws Exception {
+        BuildingSite created = site(Facing.NORTH);
+        return sites.changeKind(created.id(), SiteKind.PORTAL).get(TIMEOUT, TimeUnit.SECONDS)
+                .orElseThrow();
+    }
+
+    @Test
+    void anArchOnABuildingSiteIsRefusedAndNothingIsTouched() throws Exception {
+        addArch();
+        BuildingSite created = site(Facing.NORTH);
+
+        BuildingPlacementService.PlaceResult result =
+                service.place(created.id(), "test_arch_01", "Lody").get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertFalse(result.placed());
+        assertTrue(result.error().contains("arche de portail"), result.error());
+        assertTrue(gateway.calls.isEmpty(), "rien ne doit être capturé ni collé : " + gateway.calls);
+        assertEquals(SiteStatus.EMPTY, sites.find(created.id()).orElseThrow().status());
+    }
+
+    @Test
+    void aBuildingOnAPortalSiteIsRefusedAndNothingIsTouched() throws Exception {
+        BuildingSite portal = portalSite();
+
+        BuildingPlacementService.PlaceResult result = place(portal.id());
+
+        assertFalse(result.placed());
+        assertTrue(result.error().contains("emplacement de portail"), result.error());
+        assertTrue(gateway.calls.isEmpty(), gateway.calls.toString());
+        assertTrue(service.all().isEmpty());
+    }
+
+    @Test
+    void anArchOnAPortalSiteIsPlaceable() throws Exception {
+        addArch();
+        BuildingSite portal = portalSite();
+
+        BuildingPlacementService.Preview preview = service.preview(portal.id(), "test_arch_01");
+
+        assertTrue(preview.placeable(), preview.refusals().toString());
+    }
+
+    @Test
+    void replacingWithAnIncompatibleKindIsRefusedButReorientingStaysPossible() throws Exception {
+        addArch();
+        BuildingSite created = site(Facing.NORTH);
+        assertTrue(place(created.id()).placed());
+
+        BuildingPlacementService.RetargetPreview replace =
+                service.previewReplace(created.id(), "test_arch_01", Facing.NORTH);
+        assertTrue(replace.refusals().stream().anyMatch(r -> r.contains("arche de portail")),
+                replace.refusals().toString());
+
+        BuildingPlacementService.RetargetPreview rotate =
+                service.previewReorient(created.id(), Facing.EAST);
+        assertTrue(rotate.refusals().stream().noneMatch(r -> r.contains("arche de portail")),
+                rotate.refusals().toString());
+    }
+
+    @Test
+    void theKindOfAnOccupiedSiteOnlyChangesToOneThatFitsWhatIsPlaced() throws Exception {
+        BuildingSite created = site(Facing.EAST);
+        assertTrue(place(created.id()).placed());
+
+        assertTrue(service.kindChangeRefusal(created.id(), SiteKind.PORTAL).isPresent(),
+                "une hutte posée interdit le type portail");
+        assertTrue(service.kindChangeRefusal(created.id(), SiteKind.BUILDING).isEmpty());
+
+        BuildingSite free = sites.create("world_hub", new BuildingSiteAnchor(500, 70, 500),
+                Facing.NORTH, "Libre", "Lody").get(TIMEOUT, TimeUnit.SECONDS).site();
+        assertTrue(service.kindChangeRefusal(free.id(), SiteKind.PORTAL).isEmpty(),
+                "un emplacement libre change de type librement");
+    }
+
+    @Test
+    void theSiteKindSurvivesARestart() throws Exception {
+        BuildingSite portal = portalSite();
+
+        BuildingSiteService fresh = new BuildingSiteService(siteRepository);
+        fresh.load().get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertEquals(SiteKind.PORTAL, fresh.find(portal.id()).orElseThrow().kind());
     }
 
     // ---- La pose -------------------------------------------------------------------------------

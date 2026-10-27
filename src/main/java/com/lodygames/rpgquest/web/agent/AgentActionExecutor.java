@@ -101,6 +101,7 @@ public final class AgentActionExecutor {
                 case BUILDING_PLAN_AUDIT -> buildingPlanAudit(action);
                 case BUILDING_PLAN_PREVIEW -> buildingPlanPreview(action);
                 case BUILDING_SITE_FACING -> buildingSiteFacing(action);
+                case BUILDING_SITE_KIND -> buildingSiteKind(action);
                 case BUILDING_SITE_DELETE -> buildingSiteDelete(action);
                 case BUILDING_DEFINITION_LIST -> buildingDefinitionList(action);
                 case BUILDING_DEFINITION_RETIRE -> buildingDefinitionRetire(action);
@@ -3662,6 +3663,8 @@ public final class AgentActionExecutor {
                 row.put("createdBy", s.createdBy());
                 row.put("createdAt", s.createdAt());
                 row.put("worldLoaded", s.worldLoaded());
+                // Issue #568 : type d'emplacement (BUILDING / PORTAL), source des filtres du panel.
+                row.put("kind", s.kind());
                 rows.add(row);
             }
             // Issue #239 : les bâtiments POSÉS voyagent avec le même relevé. Ils étaient produits par
@@ -4185,6 +4188,22 @@ public final class AgentActionExecutor {
                     "Paramètre « facing » manquant — attendu NORTH, EAST, SOUTH ou WEST."));
         }
         return actions.buildingSiteFacing(id, facing)
+                .thenApply(r -> mutationOutcome(action, r, "id", id))
+                .exceptionally(err -> unexpectedFailure(action, err));
+    }
+
+    private CompletableFuture<AgentActionOutcome> buildingSiteKind(AgentAction action) {
+        String id = buildSiteId(action);
+        if (id == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (forme « buildsite_0001 »)."));
+        }
+        String kind = trimOrNull(action.param("kind"));
+        if (kind == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « kind » manquant — attendu BUILDING ou PORTAL."));
+        }
+        return actions.buildingSiteKind(id, kind)
                 .thenApply(r -> mutationOutcome(action, r, "id", id))
                 .exceptionally(err -> unexpectedFailure(action, err));
     }

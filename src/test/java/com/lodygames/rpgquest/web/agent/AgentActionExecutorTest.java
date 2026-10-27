@@ -893,6 +893,9 @@ class AgentActionExecutorTest {
         assertTrue(json.contains("\"status\":\"EMPTY\""), json);
         assertTrue(json.contains("\"createdBy\":\"Lody\""), json);
         assertTrue(json.contains("\"worldLoaded\":true"), json);
+        // Issue #568 : le type d'emplacement voyage avec le relevé (source des filtres du panel).
+        assertTrue(json.contains("\"kind\":\"BUILDING\""), json);
+        assertTrue(json.contains("\"kind\":\"PORTAL\""), json);
         assertTrue(json.contains("\"worlds\":[\"world_hub\"]"), json);
         assertTrue(json.contains("\"total\":2"), json);
 
@@ -927,7 +930,7 @@ class AgentActionExecutorTest {
     @Test
     void buildingSiteActionsRejectAnythingButARealSiteId() {
         for (String type : new String[] {"building.site.rename", "building.site.describe",
-                "building.site.facing", "building.site.delete"}) {
+                "building.site.facing", "building.site.kind", "building.site.delete"}) {
             assertEquals(AgentActionOutcome.REJECTED,
                     run(new AgentAction("x", type, Map.of("name", "n", "facing", "NORTH",
                             "description", "d"))).status(), type + " sans id");
@@ -1046,6 +1049,18 @@ class AgentActionExecutorTest {
 
         assertEquals(AgentActionOutcome.SUCCESS, ok.status());
         assertEquals("EAST", actions.lastBuildSiteFacing);
+    }
+
+    @Test
+    void buildingSiteKindRequiresAValueAndDelegates() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("k0", "building.site.kind",
+                Map.of("id", "buildsite_0001"))).status(), "kind obligatoire");
+
+        AgentActionOutcome ok = run(new AgentAction("k1", "building.site.kind",
+                Map.of("id", "buildsite_0001", "kind", "PORTAL")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("PORTAL", actions.lastBuildSiteKind);
     }
 
     @Test
@@ -2244,6 +2259,7 @@ class AgentActionExecutorTest {
         String lastBuildSiteDescription;
         String lastBuildSiteBrief;
         String lastBuildSiteFacing;
+        String lastBuildSiteKind;
         String lastBuildSiteDeletedId;
 
         @Override
@@ -2260,7 +2276,7 @@ class AgentActionExecutorTest {
                                     "2026-10-08T18:00:00Z", true),
                             new BuildingSiteSummary("buildsite_0007", "EmptySpot", "", "",
                                     "world_hub", 752, 67, -678, "SOUTH", "OCCUPIED", "LoDyMcFly",
-                                    "2026-10-11T13:33:59Z", true)),
+                                    "2026-10-11T13:33:59Z", true, "PORTAL")),
                     List.of("world_hub"), 2,
                     List.of(new BuildingPlacementSummary("buildsite_0007", "test_hut_01",
                             "Hutte de test", "world_hub", 752, 67, -678, 0,
@@ -2525,6 +2541,13 @@ class AgentActionExecutorTest {
             lastBuildSiteId = id;
             lastBuildSiteFacing = facing;
             return mutation("facing " + id);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> buildingSiteKind(String id, String kind) {
+            lastBuildSiteId = id;
+            lastBuildSiteKind = kind;
+            return mutation("kind " + id);
         }
 
         @Override

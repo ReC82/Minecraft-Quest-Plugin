@@ -123,8 +123,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > migration `data.db`.
 > Suite du 26/10 : `building.plan.preview` joint le `passage` relevé ; l'aperçu 3D de l'Atelier le dessine en volume
 > violet translucide (zone de téléportation) avec dimensions, sens de traversée et écart avec le passage demandé. La
-> reprise du volume à la pose existe depuis #565 (`zone_mode=building`). Emplacements « de type portail » : non faits
-> (changement de schéma `building_sites`, décision propriétaire attendue).
+> reprise du volume à la pose existe depuis #565 (`zone_mode=building`).
+> Suite du 27/10 (option A validée) : **types d'emplacement** `BUILDING` / `PORTAL` — migration additive `data.db`
+> **V45** (`building_sites.site_kind`, défaut `BUILDING` pour tous les existants). Refus côté serveur d'une arche sur un
+> emplacement de bâtiment et d'un bâtiment/décoration sur un emplacement de portail (aperçu, pose, remplacement ;
+> réorienter reste permis). Action `building.site.kind` (refus `INCOMPATIBLE` si ce qui est posé ne convient pas) ;
+> PlugAdmin Emplacements : badge, filtres Bâtiments / Portails, choix du type, listes de pose filtrées ; diagnostic
+> `PORTAL_SITE_KIND` (info). Création en jeu = `BUILDING`, type choisi ensuite dans PlugAdmin.
 
 > **Portails : messages et avertissement (#569, 21/10/2026)** — sections facultatives `messages:` (attente, réussite,
 > bienvenue, monde indisponible, destination dangereuse, refus par défaut) et `warning:` (mode DEFAULT/ALWAYS/NEVER,

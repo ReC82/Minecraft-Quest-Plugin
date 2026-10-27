@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.building.model.BuildingOperation;
 import com.lodygames.rpgquest.building.model.BuildingPlacement;
 import com.lodygames.rpgquest.building.model.BuildingSite;
 import com.lodygames.rpgquest.building.model.Facing;
+import com.lodygames.rpgquest.building.model.SiteKind;
 import com.lodygames.rpgquest.building.model.SiteStatus;
 import com.lodygames.rpgquest.database.BuildingBaselineRepository;
 import com.lodygames.rpgquest.database.BuildingHistoryRepository;
@@ -271,6 +272,9 @@ public final class BuildingPlacementService {
             refusals.add("L'emplacement est marqué occupé mais aucun placement n'est enregistré. "
                     + "Incohérence à examiner avant de poser.");
         }
+        // Issue #568 : arche sur emplacement de portail, bâtiment ou décoration ailleurs. Vérifié
+        // ici, donc rejoué par place() : l'écran filtre aussi ses listes, mais ne fait pas foi.
+        found.kind().refusalFor(building.kind(), building.name()).ifPresent(refusals::add);
         if (!building.valid()) {
             refusals.add(building.validate().orElse("Définition de bâtiment invalide."));
         }
@@ -598,6 +602,36 @@ public final class BuildingPlacementService {
                 });
     }
 
+    // ---- Type d'emplacement (issue #568) -----------------------------------------------------
+
+    /**
+     * Motif de refus d'un changement de type, vide s'il est permis.
+     *
+     * <p>Un emplacement libre change de type librement. Un emplacement occupé ne peut prendre
+     * qu'un type compatible avec ce qui y est posé : c'est ce qui permet de passer en « portail »
+     * l'emplacement d'une arche posée avant #568, sans jamais créer la combinaison interdite. Si la
+     * construction posée n'est plus dans la bibliothèque, son type n'est pas vérifiable : le
+     * changement est permis plutôt que bloqué pour toujours.</p>
+     */
+    public Optional<String> kindChangeRefusal(String siteId, SiteKind target) {
+        Optional<BuildingSite> site = sites.find(siteId);
+        if (site.isEmpty() || target == null) {
+            return Optional.empty();
+        }
+        BuildingPlacement placement = placements.get(siteId);
+        if (placement == null) {
+            if (site.get().status() == SiteStatus.OCCUPIED) {
+                return Optional.of("L'emplacement est marqué occupé mais aucun placement n'est "
+                        + "enregistré : type inchangé tant que l'incohérence n'est pas examinée.");
+            }
+            return Optional.empty();
+        }
+        return library.find(placement.buildingId())
+                .flatMap(building -> target.refusalFor(building.kind(), building.name())
+                        .map(reason -> "Ce qui est posé ici ne convient pas au type « "
+                                + target.label() + " » — " + reason));
+    }
+
     // ---- Réorienter / remplacer (issue #234) ---------------------------------------------------
 
     /**
@@ -661,6 +695,18 @@ public final class BuildingPlacementService {
 
         if (!gateway.available()) {
             refusals.add(gateway.unavailableReason());
+        }
+        // Issue #568 : remplacer, c'est poser une autre construction — même règle de type que la
+        // pose. Réorienter garde la construction en place : une arche posée avant #568 sur un
+        // emplacement resté « bâtiment » peut donc encore tourner, avec un avertissement.
+        Optional<String> kindRefusal = site.kind().refusalFor(definition.kind(), definition.name());
+        if (kindRefusal.isPresent()) {
+            if (operation == BuildingOperation.REPLACE) {
+                refusals.add(kindRefusal.get());
+            } else {
+                warnings.add("Type d'emplacement incohérent avec ce qui est posé : "
+                        + kindRefusal.get());
+            }
         }
         if (!definition.valid()) {
             refusals.add(definition.validate().orElse("Définition de bâtiment invalide."));

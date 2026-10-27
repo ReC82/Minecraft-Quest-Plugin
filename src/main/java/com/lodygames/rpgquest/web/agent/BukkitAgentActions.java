@@ -803,7 +803,7 @@ public final class BukkitAgentActions implements AgentActions {
                         site.aiBrief(),
                         site.world(), site.x(), site.y(), site.z(), site.facing().name(),
                         site.status().name(), site.createdBy(), site.createdAt().toString(),
-                        loaded.contains(site.world())));
+                        loaded.contains(site.world()), site.kind().name()));
             }
             return done(new BuildingSiteCatalogView(List.copyOf(rows),
                     buildingSiteService.worlds(), rows.size(), placementRows()));
@@ -3698,6 +3698,40 @@ public final class BukkitAgentActions implements AgentActions {
                                 "Aucun emplacement « " + safe(id) + " » : rien n'a été modifié.")))
                 .exceptionally(error -> MutationResult.of(false, "ERROR",
                         "Échec du changement d'orientation : " + rootName(error)));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingSiteKind(String id, String rawKind) {
+        var kind = com.lodygames.rpgquest.building.model.SiteKind.parse(rawKind);
+        if (kind.isEmpty()) {
+            return done(MutationResult.of(false, "INVALID",
+                    "Type d'emplacement inconnu « " + safe(rawKind) + " » — attendu BUILDING ou PORTAL."));
+        }
+        // Issue #568 : vérifié sur le thread principal, comme la pose, pour lire un état de
+        // placements cohérent avec celui qu'une pose concurrente verrait.
+        return onMain(() -> {
+            Optional<String> refusal = buildingPlacements == null ? Optional.empty()
+                    : buildingPlacements.kindChangeRefusal(id, kind.get());
+            if (refusal.isPresent()) {
+                return done(MutationResult.of(false, "INCOMPATIBLE", refusal.get()));
+            }
+            return buildingSiteService.changeKind(id, kind.get())
+                    .thenApply(updated -> updated
+                            .map(site -> new MutationResult(true, "KIND_CHANGED",
+                                    "Emplacement « " + site.id() + " » : type « "
+                                            + site.kind().label() + " ».",
+                                    List.of("aucun bloc du monde touché", kindEffect(site.kind()))))
+                            .orElseGet(() -> MutationResult.of(false, "NOT_FOUND",
+                                    "Aucun emplacement « " + safe(id) + " » : rien n'a été modifié.")))
+                    .exceptionally(error -> MutationResult.of(false, "ERROR",
+                            "Échec du changement de type : " + rootName(error)));
+        });
+    }
+
+    private static String kindEffect(com.lodygames.rpgquest.building.model.SiteKind kind) {
+        return kind == com.lodygames.rpgquest.building.model.SiteKind.PORTAL
+                ? "n'accepte plus que des arches de portail"
+                : "accepte bâtiments et décorations, plus les arches de portail";
     }
 
     /**

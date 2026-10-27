@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.building;
 import com.lodygames.rpgquest.building.model.BuildingSite;
 import com.lodygames.rpgquest.building.model.BuildingSiteAnchor;
 import com.lodygames.rpgquest.building.model.Facing;
+import com.lodygames.rpgquest.building.model.SiteKind;
 import com.lodygames.rpgquest.building.model.SiteStatus;
 import com.lodygames.rpgquest.database.BuildingSiteRepository;
 import java.time.Clock;
@@ -262,6 +263,16 @@ public final class BuildingSiteService {
     public CompletableFuture<Optional<BuildingSite>> reface(String id, Facing facing) {
         return mutate(id, site -> site.withFacing(facing),
                 updated -> repository.updateFacing(updated.id(), updated.facing()));
+    }
+
+    /**
+     * Change le type de l'emplacement (issue #568). La compatibilité avec ce qui est posé est
+     * vérifiée par l'appelant ({@code BuildingPlacementService#kindChangeRefusal}) : ce service ne
+     * connaît pas les placements.
+     */
+    public CompletableFuture<Optional<BuildingSite>> changeKind(String id, SiteKind kind) {
+        return mutate(id, site -> site.withKind(kind),
+                updated -> repository.updateKind(updated.id(), updated.kind()));
     }
 
     /**

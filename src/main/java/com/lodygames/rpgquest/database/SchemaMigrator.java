@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 44;
+    public static final int CURRENT_VERSION = 45;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -91,7 +91,9 @@ public final class SchemaMigrator {
             new SchemaMigration(43, "personal_vaults (coffres personnels partagés entre les Hubs, issue #104)",
                     SchemaMigrator::applyV43),
             new SchemaMigration(44, "vault_access_points (coffres physiques des Hubs liés aux coffres personnels, issue #105)",
-                    SchemaMigrator::applyV44));
+                    SchemaMigrator::applyV44),
+            new SchemaMigration(45, "building_sites.site_kind (emplacements de bâtiment / de portail, issue #568)",
+                    SchemaMigrator::applyV45));
 
     private SchemaMigrator() {
     }
@@ -1541,6 +1543,21 @@ public final class SchemaMigrator {
                         PRIMARY KEY (world, x, y, z)
                     )
                     """));
+        }
+    }
+
+    private static void applyV45(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #568 (option A, décision propriétaire du 27/10/2026) — type d'un emplacement :
+        // BUILDING reçoit un bâtiment ou une décoration, PORTAL seulement une arche. STRICTEMENT
+        // ADDITIVE : aucune ligne n'est réécrite, et le DEFAULT donne BUILDING à tous les
+        // emplacements existants, c'est-à-dire exactement le comportement d'avant. Une arche déjà
+        // posée sur un emplacement BUILDING reste en place ; c'est à l'administrateur de passer
+        // l'emplacement en PORTAL (permis tant que ce qui est posé reste compatible).
+        if (!dialect.columnExists(connection, "building_sites", "site_kind")) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute(dialect.ddl(
+                        "ALTER TABLE building_sites ADD COLUMN site_kind TEXT NOT NULL DEFAULT 'BUILDING'"));
+            }
         }
     }
 

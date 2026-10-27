@@ -240,6 +240,46 @@ class BuildingSitesPageTest {
                 "la casse est normalisée");
     }
 
+    // ---- Type d'emplacement (issue #568) ------------------------------------------------------
+
+    /** Un emplacement de bâtiment (défaut, sans « kind ») et un emplacement de portail. */
+    private static final String SITES_WITH_KINDS = SITES.replace(
+            "\"worldLoaded\":false}", "\"worldLoaded\":false,\"kind\":\"PORTAL\"}");
+
+    @Test
+    void theListShowsTheSiteKindAndFiltersByIt() throws Exception {
+        start();
+        seedWith(SITES_WITH_KINDS);
+
+        String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("data-filter-cat=\"building\""), "emplacement de bâtiment par défaut");
+        assertTrue(page.contains("data-filter-cat=\"portal\""), "emplacement de portail");
+        assertTrue(page.contains("Bâtiments · 1"), "puce Bâtiments");
+        assertTrue(page.contains("Portails · 1"), "puce Portails");
+        assertTrue(page.contains("n'accepte qu'une arche de portail"), "le type est expliqué");
+        assertTrue(page.contains("data-filter-empty=\"buildsites\""));
+    }
+
+    @Test
+    void theRealKindFormQueuesTheKindAndAnUnknownKindIsRefused() throws Exception {
+        start();
+        seed();
+
+        HttpResponse<String> res = submitRealForm("building.site.kind", Map.of("kind", "PORTAL"));
+
+        assertEquals(303, res.statusCode());
+        AgentActionRow queued = queued("building.site.kind");
+        assertEquals("PORTAL", queued.params().get("kind"));
+        assertEquals("buildsite_0001", queued.params().get("id"));
+
+        String token = csrf(get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body());
+        post("/agents/action", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID
+                + "&type=building.site.kind&return=/buildings/sites"
+                + "&id=buildsite_0001&kind=CATHEDRAL&confirm=true");
+        assertEquals(1, count("building.site.kind"), "un type inconnu n'atteint pas le serveur");
+    }
+
     /** Un identifiant forgé n'atteint jamais le serveur. */
     @Test
     void aForgedSiteIdIsRefusedBeforeQueueing() throws Exception {

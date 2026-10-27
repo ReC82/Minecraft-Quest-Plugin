@@ -228,6 +228,11 @@ public enum AgentActionType {
     /** Corrige l'orientation cardinale d'un emplacement — jamais sa position. */
     BUILDING_SITE_FACING("building.site.facing"),
     /**
+     * Issue #568 — change le type d'un emplacement (BUILDING / PORTAL). Refusé si ce qui est posé
+     * ne convient pas au nouveau type. Aucun bloc du monde n'est touché.
+     */
+    BUILDING_SITE_KIND("building.site.kind"),
+    /**
      * Supprime le <strong>marqueur logique</strong> d'un emplacement. Ne touche aucun bloc du monde :
      * ce lot ne sait rien poser, donc il n'y a rien à défaire en jeu. Idempotent.
      */

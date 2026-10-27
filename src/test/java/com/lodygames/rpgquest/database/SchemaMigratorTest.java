@@ -721,6 +721,54 @@ class SchemaMigratorTest {
     }
 
     /**
+     * Issue #568 — V45 sur une base V44 réelle (migrations 1 à 44 rejouées) : les emplacements
+     * existants sont conservés à l'identique et deviennent des emplacements de bâtiment ; un nouvel
+     * emplacement peut être de type portail ; rejouer la migration ne change rien.
+     */
+    @Test
+    void v45AddsSiteKindAndKeepsExistingSitesAsBuildings() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:sqlite:" + tempDir.resolve("schema-v45.db"))) {
+            new SchemaMigrationRunner(SchemaMigrator.ALL.subList(0, 44), new PragmaUserVersionHistory(),
+                    new SqliteDialect()).run(connection);
+            assertEquals(44, userVersion(connection));
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO building_sites "
+                        + "(id, name, description, ai_brief, world, x, y, z, facing, status, created_by, created_at) "
+                        + "VALUES ('buildsite_0004', 'Arche du marché', 'note', 'brief', 'world_hub', "
+                        + "10, 64, -3, 'EAST', 'OCCUPIED', 'Lody', '2026-10-20T18:00:00Z')");
+            }
+
+            SchemaMigrator.migrate(connection);
+            assertEquals(CURRENT_SCHEMA_VERSION, userVersion(connection));
+            assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
+
+            try (Statement statement = connection.createStatement()) {
+                try (ResultSet rs = statement.executeQuery("SELECT * FROM building_sites "
+                        + "WHERE id = 'buildsite_0004'")) {
+                    assertTrue(rs.next());
+                    assertEquals("BUILDING", rs.getString("site_kind"));
+                    assertEquals("Arche du marché", rs.getString("name"));
+                    assertEquals("note", rs.getString("description"));
+                    assertEquals("brief", rs.getString("ai_brief"));
+                    assertEquals(10, rs.getInt("x"));
+                    assertEquals("EAST", rs.getString("facing"));
+                    assertEquals("OCCUPIED", rs.getString("status"));
+                }
+                statement.execute("INSERT INTO building_sites "
+                        + "(id, name, description, world, x, y, z, facing, status, created_by, created_at, site_kind) "
+                        + "VALUES ('buildsite_0005', 'Porte nord', '', 'world_hub', 0, 64, 0, "
+                        + "'NORTH', 'EMPTY', 'Lody', '2026-10-27T10:00:00Z', 'PORTAL')");
+                try (ResultSet rs = statement.executeQuery(
+                        "SELECT site_kind FROM building_sites WHERE id = 'buildsite_0005'")) {
+                    assertTrue(rs.next());
+                    assertEquals("PORTAL", rs.getString("site_kind"));
+                }
+            }
+        }
+    }
+
+    /**
      * L'allocateur d'identifiants ne recycle jamais un numéro, même après suppression de la ligne
      * correspondante : c'est la garantie {@code AUTOINCREMENT}, et elle est vérifiée ici parce que
      * c'est elle qui empêchera un futur placement de viser le mauvais emplacement.

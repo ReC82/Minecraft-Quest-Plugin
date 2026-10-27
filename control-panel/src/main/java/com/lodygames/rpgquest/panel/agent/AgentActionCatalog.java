@@ -602,6 +602,10 @@ public final class AgentActionCatalog {
                 "Prévisualiser un plan de bâtiment en coupes 2D");
         addContentWrite("building.site.facing", Permission.BUILDING_WRITE,
                 "Corriger l'orientation d'un emplacement", "building.site.list");
+        // Issue #568 — type d'emplacement (bâtiment / portail). Le plugin refuse un type qui ne
+        // convient pas à ce qui est déjà posé ; aucun bloc du monde n'est touché.
+        addContentWrite("building.site.kind", Permission.BUILDING_WRITE,
+                "Changer le type d'un emplacement (bâtiment / portail)", "building.site.list");
         // Suppression du marqueur logique : aucun bloc du monde n'est touché, mais l'identifiant ne
         // sera jamais réattribué — donc mutation sensible, avec confirmation explicite.
         addSensitiveWrite("building.site.delete", Permission.BUILDING_DELETE, false,
@@ -1323,6 +1327,20 @@ public final class AgentActionCatalog {
                 }
                 params.put("id", id);
                 params.put("facing", facing);
+            }
+            case "building.site.kind" -> {
+                String id = buildSiteId(form);
+                if (id == null) {
+                    return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
+                }
+                String kind = trim(form.get("kind")).toUpperCase(java.util.Locale.ROOT);
+                if (!com.lodygames.rpgquest.panel.building.BuildingSiteView.KINDS.contains(kind)) {
+                    return Validation.fail("Type d'emplacement inconnu : attendu "
+                            + String.join(", ", com.lodygames.rpgquest.panel.building.BuildingSiteView.KINDS)
+                            + ".");
+                }
+                params.put("id", id);
+                params.put("kind", kind);
             }
             case "encounter.template.create", "encounter.template.update" -> {
                 // Issue #13 étape 3 : contrôle de forme seulement ; le serveur revalide avec le

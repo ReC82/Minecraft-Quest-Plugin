@@ -283,6 +283,10 @@ public final class DiagnosticHelp {
                 "{detail}",
                 "La zone enregistrée reste la même, mais le portail ne peut plus être activé.",
                 "Choisir un autre emplacement (ou des coordonnées) dans « Zone d'activation » de la fiche.", "portails");
+        add("PORTAL_SITE_KIND", Level.INFO, "Emplacement du portail de type bâtiment",
+                "{detail}",
+                "Sans effet sur la téléportation, mais un bâtiment pourrait être posé à la place de l'arche.",
+                "Page Emplacements, fiche de l'emplacement : « Type d'emplacement » = Portail.", "portails");
         add("PORTAL_BUILDING_LINK_BROKEN", Level.WARNING, "Arche liée absente, remplacée ou réorientée",
                 "{detail}",
                 "La zone du portail ne correspond plus au passage de l'arche posée : son activation est refusée "

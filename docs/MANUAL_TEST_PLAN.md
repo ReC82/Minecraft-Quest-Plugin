@@ -8179,7 +8179,9 @@ un portail créés pour la recette, supprimés à la fin.
     « point fixe » (relever d'abord en jeu, F3, les X / Y des pieds / Z et le regard de l'arrivée voulue, puis les
     saisir dans « Point fixe · X / Y / Z » et « Regard »). **Attendu** : Brouillon, il ne
     téléporte personne (TC-387, TC-391). **Retour arrière** : « Supprimer » (fichier seulement).
-4.  Poser l'arche de la Bibliothèque sur l'emplacement (Emplacements → aperçu → confirmation), puis fiche du portail →
+4.  Fiche de l'emplacement → « Type d'emplacement » = **Portail** (depuis #568, une arche est refusée sur un
+    emplacement de type Bâtiment — TC-440).
+    Poser l'arche de la Bibliothèque sur l'emplacement (Emplacements → aperçu → confirmation), puis fiche du portail →
     « Lier l'arche posée ». **Attendu** : zone = passage de l'arche, toujours Brouillon (TC-396). **Retour arrière** :
     « Délier sans démolir », puis libérer l'emplacement (terrain d'origine rendu).
 5.  Conditions → niveau RPG minimum = votre niveau + 1 → Enregistrer. **Attendu** : condition écrite, rien vérifié sur
@@ -9396,3 +9398,31 @@ purge et retrait refusés, sauvegarde intacte, aucun collage ; copie non vérifi
 sans empreinte ; bâtiment non posé ; deux poses de versions différentes), `BuildingLifecyclePageTest`
 (`thePlacedVersionCopyIsLocated`, `aLostPlacedVersionIsFlagged`), `WorkshopFlowTest#aProtectedPlacedVersionIsAConflictNotACorrection`,
 `AgentActionExecutorTest` (champ `placedCopy`).
+
+### TC-440 — Types d'emplacement : bâtiment / portail, refus côté serveur (issue #568, option A du 27/10, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et PlugAdmin issus de `feature/568-type-emplacement-portail` (schéma `data.db` V45). Les étapes 1-3
+sont en **lecture seule** ou ne touchent aucun bloc. Les étapes 4-6 posent une construction : **uniquement avec le feu
+vert du propriétaire**, sur un emplacement d'essai (recette #570), jamais sur un emplacement réel.
+
+1.  Logs de démarrage : migration V45 appliquée une seule fois, aucun avertissement. Bâtiments → Emplacements : chaque
+    emplacement existant porte le badge **Bâtiment** ; puces « Bâtiments · N » et « Portails · 0 ». **Attendu** :
+    aucun emplacement perdu, positions, orientations et états inchangés.
+2.  Ouvrir un emplacement **libre** d'essai → « Type d'emplacement » = Portail → Changer le type. **Attendu** : badge
+    Portail, ligne « Type : portail — n'accepte qu'une arche de portail », puce Portails · 1 ; aucun bloc touché.
+    La liste « Choisir un bâtiment » ne propose plus que des arches (ou l'explique si aucune).
+3.  Remettre le type à Bâtiment. **Attendu** : les arches disparaissent de la liste de pose.
+4.  *(feu vert)* Emplacement d'essai de type Bâtiment : tenter de poser une arche via `?place=<arche>` ou l'Atelier.
+    **Attendu** : refus serveur « … est une arche de portail : elle se pose sur un emplacement de portail … », rien
+    n'est collé.
+5.  *(feu vert)* Passer l'emplacement en Portail, poser l'arche. **Attendu** : pose acceptée ; « Type » = Bâtiment
+    est alors refusé (`INCOMPATIBLE`) tant que l'arche est posée.
+6.  *(feu vert)* Portails → un portail lié à un emplacement resté « bâtiment » : diagnostic info « Emplacement du
+    portail de type bâtiment ». Passer l'emplacement en Portail : le diagnostic disparaît.
+
+**Couverture automatisée** : `SchemaMigratorTest#v45AddsSiteKindAndKeepsExistingSitesAsBuildings` (base V44 réelle,
+données conservées, défaut BUILDING, rejeu idempotent), `BuildingPlacementServiceTest` (arche sur emplacement bâtiment
+et bâtiment sur emplacement portail refusés sans capture ni collage, arche sur portail acceptée, remplacement refusé /
+réorientation permise, changement de type d'un emplacement occupé, type conservé après redémarrage),
+`AgentActionExecutorTest` (`kind` dans `building.site.list`, `building.site.kind`), `BuildingSiteDirectoryTest`,
+`BuildingSitesPageTest` (badge, puces, formulaire réel, type inconnu refusé avant la file).

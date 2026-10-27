@@ -1352,6 +1352,7 @@ Ce lot ne sait rien poser, et ne prétend rien à leur sujet.
 | `world` / `x` / `y` / `z` | l'ancre, en coordonnées de **blocs** |
 | `facing` | `NORTH` / `EAST` / `SOUTH` / `WEST`, corrigeable |
 | `status` | `EMPTY` — seul état que ce lot sait produire |
+| `site_kind` | `BUILDING` (défaut) ou `PORTAL` — type d'emplacement (issue #568, schéma V45) |
 | `created_by` / `created_at` | auteur (vide si l'identité n'était pas disponible — jamais inventée) et date |
 
 **Coordonnées entières, et pas flottantes** : un bâtiment se pose sur la grille de blocs. Les
@@ -1575,6 +1576,7 @@ est bien arrivé. Aucune des trois ne permet de créer.
 | `building.site.describe` | `BUILDING_WRITE` | **note courte** d'administrateur (500 car.) ; une valeur **vide est valide** (c'est « effacer la note ») |
 | `building.site.brief` | `BUILDING_WRITE` | **brief architectural** (6 000 car.) — entrée de la génération ; vide = valide |
 | `building.site.facing` | `BUILDING_WRITE` | orientation — **jamais** la position |
+| `building.site.kind` | `BUILDING_WRITE` | type d'emplacement `BUILDING` / `PORTAL` (#568) ; refusé (`INCOMPATIBLE`) si ce qui est posé ne convient pas au nouveau type ; aucun bloc touché |
 | `building.site.delete` | `BUILDING_DELETE` | retire le marqueur logique |
 | `building.generate` | `BUILDING_WRITE` | génère un bâtiment depuis un **plan déclaratif** (issue #94) |
 | `building.plan.audit` | `BUILDING_READ` | audite un plan **sans rien écrire** (issue #94, lot F) |
@@ -5507,6 +5509,20 @@ Deux systèmes de portails **distincts**, à ne pas confondre — vérifié dans
   diagnostic `PORTAL_BUILDING_LINK_BROKEN` et bloc `construction` (`linked`, `status`, `placed`, `rotation`,
   `linkable`, `zone`, `refusal`). Remplacer l'arche (#234) ne touche ni la destination ni les conditions : relier relit
   le nouveau passage. L'empreinte d'un portail sans lien est inchangée (`hub_to_wild`, `hub_to_claims`).
+- **Types d'emplacement** (#568, option A du 27/10/2026) : colonne `building_sites.site_kind` (migration additive
+  **V45**, `TEXT NOT NULL DEFAULT 'BUILDING'` ; aucune ligne réécrite, tous les emplacements existants restent des
+  emplacements de bâtiment). `BUILDING` reçoit un bâtiment habitable ou une décoration ; `PORTAL` reçoit **uniquement**
+  une arche (`kind: portal`). Règle vérifiée **côté serveur** (`SiteKind`, `BuildingPlacementService`) à l'aperçu, à
+  la pose et au **remplacement** : arche sur emplacement de bâtiment ou bâtiment/décoration sur emplacement de portail
+  → refus, rien n'est capturé ni collé. **Réorienter** garde la construction en place : une arche posée avant V45 sur
+  un emplacement resté `BUILDING` peut encore tourner (avertissement). Changer le type (`building.site.kind`) est libre
+  sur un emplacement vide ; sur un emplacement occupé, seul un type compatible avec ce qui est posé est accepté (une
+  construction absente de la bibliothèque ne bloque pas). Un emplacement créé en jeu (outil) est `BUILDING` ; le type
+  se choisit ensuite dans PlugAdmin (page **Emplacements** : badge, puces **Bâtiments / Portails**, « Type
+  d'emplacement » ; listes de pose et de remplacement limitées aux constructions compatibles ; bandeau si l'arche
+  posée ne correspond pas au type). `building.site.list` renvoie `kind`. `portal.list` : diagnostic info
+  `PORTAL_SITE_KIND` quand l'emplacement cité par un portail est de type bâtiment. Le passage automatique et le volume
+  violet de l'aperçu sont inchangés.
 - Limite : une capture (#246) d'une arche posée crée un bâtiment **habitable** sans zone de passage.
 
 ### `/rpgadmin portal` — commandes

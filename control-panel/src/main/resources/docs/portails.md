@@ -243,6 +243,9 @@ Un portail créé **depuis un emplacement** peut suivre l'**arche** qui y est po
    sens de la traversée ; un écart avec le passage demandé au projet est signalé.
 2. **Poser l'arche** sur l'emplacement du portail depuis la page **Emplacements** (aperçu, puis
    confirmation) — comme tout bâtiment. Poser une arche **n'active jamais** un portail.
+   L'emplacement doit être de **type Portail** (fiche de l'emplacement, « Type d'emplacement ») :
+   le serveur refuse une arche sur un emplacement de type Bâtiment, et un bâtiment ou une décoration
+   sur un emplacement de type Portail. Un emplacement créé en jeu est de type Bâtiment.
 3. **Lier l'arche posée** (action `portal.building.link`, portail non actif) : la zone d'activation
    devient exactement le passage de l'arche, relu après l'**ancre et la rotation** de la pose. Le
    portail reste en brouillon ou désactivé ; l'**activation** reste un geste séparé.
@@ -322,6 +325,13 @@ rien. L'activer depuis la fiche.
 
 Le portail cite un emplacement (`site:`) qui n'existe plus. Sa zone enregistrée ne change pas, mais
 il ne peut plus être activé : choisir un autre emplacement ou des coordonnées.
+
+## Emplacement du portail de type bâtiment
+
+L'emplacement cité par le portail est de type **Bâtiment** (cas d'une arche posée avant les types
+d'emplacement). Sans effet sur la téléportation. Page **Emplacements**, fiche de l'emplacement :
+« Type d'emplacement » = **Portail**. Rien n'est modifié dans le monde, et aucun bâtiment ne pourra
+plus y remplacer l'arche.
 
 ## Portail aller introuvable
 

@@ -49,6 +49,46 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-27 - Plugin + PlugAdmin : types d'emplacement bâtiment / portail, migration V45 (#568, TC-440)
+
+### Changement
+
+Option A validée par le propriétaire (27/10 09:02). Chaque emplacement de construction a un type `BUILDING`
+(défaut) ou `PORTAL`. Le serveur refuse une arche sur un emplacement de bâtiment et un bâtiment/décoration sur un
+emplacement de portail (aperçu, pose, remplacement ; réorienter reste permis). Nouvelle action
+`building.site.kind` ; `building.site.list` renvoie `kind` ; PlugAdmin Emplacements : badge, filtres, choix du type.
+
+### Action serveur
+
+- **Effectué le 27/10 vers 15:14** : JAR `002facdb` (PR #893, CI PR + fusion vertes) par
+  `scripts/deploy-verygames.sh -y` (« Validation : CI verte sur 002facd », JAR en ligne 4 448 134 octets == local),
+  SHA-256 `0c977c7a…` re-téléchargé identique ; DEV redémarré par `scripts/verygames-restart.sh` (0 joueur), ONLINE.
+- **Migration automatique `data.db` V45** au démarrage : `ALTER TABLE building_sites ADD COLUMN site_kind TEXT NOT
+  NULL DEFAULT 'BUILDING'`. Strictement additive. Relue sur une copie téléchargée après redémarrage :
+  `user_version = 45`, 12 emplacements, tous `BUILDING`.
+- PlugAdmin `002facdb` par `scripts/plugadmin/deploy.sh` ; `/health` ONLINE à la relecture (KO du script = course
+  connue), action `building.site.kind` et fiche `portails.md` présentes dans le JAR servi.
+- Aucune configuration, aucun fichier de contenu. Aucun emplacement, arche ni portail créé, posé, modifié ou
+  supprimé.
+
+### Sauvegarde préalable
+
+`rpgquest-20261027T141334Z-predeploy.jar` (= JAR `72227f73`) ; **`data.db-20261027T141409Z-pre-v45`**
+(V44, `integrity_check` ok, 12 emplacements) dans `~/.local/share/rpgquest/verygames-backups/` ; release
+PlugAdmin précédente sous `/opt/plugadmin/releases/`.
+
+### Validation
+
+TC-440 étapes 1-3 (lecture / changement de type d'un emplacement libre d'essai) — PENDING MANUAL VALIDATION ;
+étapes 4-6 seulement sur feu vert.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage ; `scripts/plugadmin/rollback.sh app`. **Ne pas
+restaurer `data.db`** : un JAR antérieur ignore une version de schéma supérieure et ses écritures nomment leurs
+colonnes, donc `site_kind` reste inerte (défaut `BUILDING`). La copie `pre-v45` ne sert qu'en cas de corruption
+avérée, serveur arrêté.
+
 ## 2026-10-26 - Plugin + PlugAdmin : aperçu 3D du volume de passage d'une arche de portail (#568, TC-396)
 
 ### Changement

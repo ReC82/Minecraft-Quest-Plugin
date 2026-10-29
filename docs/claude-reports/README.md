@@ -498,3 +498,4 @@ Voir n'importe quel rapport existant ci-dessous pour un exemple rempli.
 | 2026-10-28 | #0 — tri du backlog 20:17 : 198 tickets ouverts ; aucune activité GitHub depuis 14:15 (hors PR #898) ; rien mis en file | DONE | [2026-10-28_2017_tri-backlog-0.md](2026-10-28_2017_tri-backlog-0.md) |
 | 2026-10-29 | #0 — tri du backlog 02:19 : 198 tickets ouverts ; aucune activité GitHub depuis le 28/10 20:17 (hors PR #899) ; rien mis en file | DONE | [2026-10-29_0219_tri-backlog-0.md](2026-10-29_0219_tri-backlog-0.md) |
 | 2026-10-29 | #0 — tri du backlog 08:21 : 198 tickets ouverts ; aucune activité GitHub depuis 02:19 ; rien mis en file | DONE | [2026-10-29_0821_tri-backlog-0.md](2026-10-29_0821_tri-backlog-0.md) |
+| 2026-10-29 | #0 — tri du backlog 14:23 : 198 tickets ouverts ; retours propriétaire #568 (TC-440 ét. 1-2) et #881 (TC-438 ét. 2-5) reportés au registre ; rien mis en file | DONE | [2026-10-29_1423_tri-backlog-0.md](2026-10-29_1423_tri-backlog-0.md) |

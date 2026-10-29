@@ -16,7 +16,10 @@ import org.bukkit.World;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.BrushableBlock;
 import org.bukkit.block.Campfire;
+import org.bukkit.block.DecoratedPot;
 import org.bukkit.block.Jukebox;
+import org.bukkit.block.data.type.ChiseledBookshelf;
+import org.bukkit.block.data.type.Lectern;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.BlockInventoryHolder;
@@ -128,10 +131,10 @@ public final class BukkitWorldProbe implements WorldProbe {
                     if (!footprint.contains(footprint.world(), state.getX(), state.getY(), state.getZ())) {
                         continue;
                     }
-                    Boolean filled = contentOf(state);
-                    if (filled != null) {
+                    CaptureSurvey.ContentFate fate = contentOf(state);
+                    if (fate != null) {
                         containers.add(new CaptureSurvey.ContainerSpot(state.getX(), state.getY(),
-                                state.getZ(), state.getType().getKey().getKey(), filled));
+                                state.getZ(), state.getType().getKey().getKey(), fate));
                     }
                 }
             }
@@ -155,28 +158,35 @@ public final class BukkitWorldProbe implements WorldProbe {
     }
 
     /**
-     * {@code null} si le bloc n'a pas de contenu transportable ; sinon, s'il contient quelque chose.
-     * Les enseignes, bannières et têtes ne sont PAS des conteneurs : leur texte et leurs motifs sont
-     * du décor, et ils sont capturés.
+     * {@code null} si le bloc n'a pas de contenu transportable ; sinon, ce que devient ce contenu dans
+     * la variante (issue #903). Les enseignes, bannières et têtes ne sont PAS des conteneurs : leur
+     * texte et leurs motifs sont du décor, et ils sont capturés.
      */
-    private static Boolean contentOf(BlockState state) {
+    private static CaptureSurvey.ContentFate contentOf(BlockState state) {
+        String type = state.getType().getKey().getKey();
+        boolean showsBooks = state.getBlockData() instanceof ChiseledBookshelf shelf
+                ? !shelf.getOccupiedSlots().isEmpty()
+                : state.getBlockData() instanceof Lectern lectern && lectern.hasBook();
+        if (state instanceof DecoratedPot pot) {
+            boolean customSherds = pot.getSherds().values().stream().anyMatch(m -> m != Material.BRICK);
+            return CaptureContent.fate(type, !pot.getInventory().isEmpty(), false, customSherds);
+        }
         if (state instanceof BlockInventoryHolder holder) {
-            return !holder.getInventory().isEmpty();
+            return CaptureContent.fate(type, !holder.getInventory().isEmpty(), showsBooks, false);
         }
         if (state instanceof Jukebox jukebox) {
-            return jukebox.hasRecord();
+            return CaptureContent.fate(type, jukebox.hasRecord(), false, false);
         }
         if (state instanceof Campfire campfire) {
+            boolean cooking = false;
             for (int i = 0; i < campfire.getSize(); i++) {
                 ItemStack item = campfire.getItem(i);
-                if (item != null && !item.getType().isAir()) {
-                    return true;
-                }
+                cooking |= item != null && !item.getType().isAir();
             }
-            return false;
+            return CaptureContent.fate(type, cooking, false, false);
         }
         if (state instanceof BrushableBlock brushable) {
-            return !brushable.getItem().getType().isAir();
+            return CaptureContent.fate(type, !brushable.getItem().getType().isAir(), false, false);
         }
         return null;
     }

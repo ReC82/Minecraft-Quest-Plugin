@@ -4597,7 +4597,8 @@ public final class AgentActionExecutor {
         return new AgentActions.BuildingCaptureRequest(siteId, margins[0], margins[1], margins[2],
                 margins[3], margins[4], margins[5], nullToEmpty(action.param("new_id")),
                 nullToEmpty(action.param("name")), nullToEmpty(action.param("description")),
-                nullToEmpty(action.param("category")));
+                nullToEmpty(action.param("category")),
+                "true".equals(trimOrNull(action.param("accept_visual_loss"))));
     }
 
     private static String nullToEmpty(String value) {

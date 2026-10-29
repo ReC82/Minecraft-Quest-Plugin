@@ -3062,7 +3062,7 @@ public final class BukkitAgentActions implements AgentActions {
         return new com.lodygames.rpgquest.building.BuildingCaptureService.Request(r.siteId(),
                 new com.lodygames.rpgquest.building.BuildingCaptureService.Margins(r.west(), r.east(),
                         r.down(), r.up(), r.north(), r.south()),
-                r.newId(), r.name(), r.description(), r.category());
+                r.newId(), r.name(), r.description(), r.category(), r.acceptVisualLoss());
     }
 
     /** Projette l'aperçu de capture en vue transportable — refusé ou non, il porte ses motifs. */
@@ -3106,6 +3106,15 @@ public final class BukkitAgentActions implements AgentActions {
             details.put("entities", sv.entityCount());
             details.put("entity_types", new LinkedHashMap<>(new java.util.TreeMap<>(sv.entities())));
             details.put("materials", sv.materials());
+            // Issue #903 : un message orienté résultat, puis le sort du contenu, en français.
+            details.put("headline", com.lodygames.rpgquest.building.CaptureContent.headline(sv));
+            details.put("content_groups", com.lodygames.rpgquest.building.CaptureContent.groups(sv).stream()
+                    .map(g -> (Object) Map.of("fate", g.fate().name(), "count", g.count(),
+                            "title", g.title(), "text", g.text()))
+                    .toList());
+            details.put("entity_note", com.lodygames.rpgquest.building.CaptureContent.entityNote(sv));
+            details.put("visual_losses", sv.visualLosses());
+            details.put("acknowledgement", com.lodygames.rpgquest.building.CaptureContent.acknowledgement(sv));
         });
         return new BuildingCaptureView(preview.capturable(), details, preview.refusals(),
                 preview.warnings(), preview.token());

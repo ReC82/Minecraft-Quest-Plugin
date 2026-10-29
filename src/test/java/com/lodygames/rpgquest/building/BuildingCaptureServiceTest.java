@@ -137,8 +137,10 @@ class BuildingCaptureServiceTest {
     /** Monde simulé : le relevé est fixé par le test. */
     private static final class FakeWorld implements WorldProbe {
         CaptureSurvey survey = new CaptureSurvey(true, "", 120L,
-                List.of(new CaptureSurvey.ContainerSpot(101, 71, 201, "chest", true),
-                        new CaptureSurvey.ContainerSpot(102, 71, 201, "barrel", false)),
+                List.of(new CaptureSurvey.ContainerSpot(101, 71, 201, "chest",
+                                CaptureSurvey.ContentFate.HIDDEN_DROPPED),
+                        new CaptureSurvey.ContainerSpot(102, 71, 201, "barrel",
+                                CaptureSurvey.ContentFate.EMPTY)),
                 Map.of("item_frame", 2, "painting", 1), List.of("oak_planks", "cobblestone"));
         final List<BuildingFootprint> surveyed = new ArrayList<>();
 
@@ -252,10 +254,72 @@ class BuildingCaptureServiceTest {
 
         BuildingCaptureService.Preview preview = capture.preview(request(placed.siteId(), "hutte_deco"));
 
-        assertTrue(preview.warnings().stream().anyMatch(w -> w.contains("2 conteneur(s) capturé(s) VIDE(S)")
-                && w.contains("dont 1") && w.contains("chest")), preview.warnings().toString());
-        assertTrue(preview.warnings().stream().anyMatch(w -> w.contains("3 entité(s) NON capturée(s)")
-                && w.contains("2 × item_frame") && w.contains("1 × painting")), preview.warnings().toString());
+        // Issue #903 : un coffre plein et un tonneau vide ne sont pas une alarme — rien ne change à
+        // l'œil. Ils sont décrits (CaptureContent.groups), les entités en note discrète.
+        assertTrue(preview.warnings().isEmpty(), preview.warnings().toString());
+        CaptureSurvey survey = preview.survey().orElseThrow();
+        assertEquals(List.of(CaptureSurvey.ContentFate.HIDDEN_DROPPED, CaptureSurvey.ContentFate.EMPTY),
+                CaptureContent.groups(survey).stream().map(CaptureContent.Group::fate).toList());
+        assertTrue(CaptureContent.entityNote(survey).startsWith("2 × cadre, 1 × tableau."),
+                CaptureContent.entityNote(survey));
+        assertEquals("", CaptureContent.acknowledgement(survey), "aucune perte visible à acquitter");
+    }
+
+    /** La grande librairie (#903) : livres visibles gardés, objets d'étagère perdus. */
+    private void libraryLikeSurvey() {
+        world.survey = new CaptureSurvey(true, "", 898L,
+                List.of(new CaptureSurvey.ContainerSpot(101, 71, 201, "chiseled_bookshelf",
+                                CaptureSurvey.ContentFate.VISUAL_KEPT),
+                        new CaptureSurvey.ContainerSpot(102, 71, 201, "lectern",
+                                CaptureSurvey.ContentFate.VISUAL_KEPT),
+                        new CaptureSurvey.ContainerSpot(103, 71, 201, "spruce_shelf",
+                                CaptureSurvey.ContentFate.VISUAL_LOST)),
+                Map.of("item_frame", 4, "turtle", 1), List.of("spruce_planks"));
+    }
+
+    @Test
+    void displayedItemsThatWouldDisappearAreAWarningAndNeedAnExplicitAcknowledgement() throws Exception {
+        BuildingPlacement placed = placedHut(100);
+        libraryLikeSurvey();
+        var request = request(placed.siteId(), "librairie_v2");
+
+        BuildingCaptureService.Preview preview = capture.preview(request);
+
+        assertTrue(preview.capturable(), preview.refusals().toString());
+        assertTrue(preview.warnings().stream().anyMatch(w -> w.startsWith("1 bloc(s) perdront les objets")
+                && w.contains("1 × étagère en sapin")), preview.warnings().toString());
+        BuildingCaptureService.Result refused = capture.capture(request, "admin", preview.token());
+        assertFalse(refused.captured());
+        assertTrue(refused.error().contains("cochez l'acquittement"), refused.error());
+        assertFalse(gateway.calls.contains("library:librairie_v2.schem"), "rien n'a été écrit sans accord");
+        assertTrue(library.find("librairie_v2").isEmpty());
+
+        var accepted = new BuildingCaptureService.Request(placed.siteId(), BuildingCaptureService.Margins.NONE,
+                "librairie_v2", "Hutte décorée", "Variante retouchée en jeu.", "maisons", true);
+        BuildingCaptureService.Result result = capture.capture(accepted, "admin", preview.token());
+
+        assertTrue(result.captured(), result.error());
+        assertTrue(result.effects().stream().anyMatch(e -> e.contains("2 bloc(s) gardent leurs livres visibles")),
+                result.effects().toString());
+        assertTrue(result.effects().stream().anyMatch(e -> e.startsWith("Entités non incluses : 4 × cadre, 1 × tortue")),
+                result.effects().toString());
+        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(buildings.resolve("librairie_v2.yml").toFile());
+        assertEquals(2, yaml.getInt("provenance.books-kept-as-decor"));
+        assertEquals(1, yaml.getInt("provenance.displayed-items-lost"));
+        assertEquals("4 × cadre, 1 × tortue", yaml.getString("provenance.entities-omitted"));
+    }
+
+    @Test
+    void booksKeptAsDecorNeedNoAcknowledgement() throws Exception {
+        BuildingPlacement placed = placedHut(100);
+        world.survey = new CaptureSurvey(true, "", 50L,
+                List.of(new CaptureSurvey.ContainerSpot(101, 71, 201, "chiseled_bookshelf",
+                        CaptureSurvey.ContentFate.VISUAL_KEPT)), Map.of(), List.of("oak_planks"));
+        var request = request(placed.siteId(), "librairie_decor");
+
+        var preview = capture.preview(request);
+        assertTrue(preview.warnings().isEmpty(), preview.warnings().toString());
+        assertTrue(capture.capture(request, "admin", preview.token()).captured());
     }
 
     // ---- Capture -----------------------------------------------------------------------------------

@@ -42,6 +42,17 @@ class AgentActionCatalogTest {
     }
 
     @Test
+    void captureForwardsTheVisualLossAcknowledgementOnlyWhenTicked() {
+        Map<String, String> form = new java.util.HashMap<>(Map.of("id", "buildsite_0002", "new_id", "librairie_v2",
+                "name", "Librairie", "token", "0123456789abcdef0123456789abcdef", "confirm", "true"));
+        assertFalse(AgentActionCatalog.validate("building.placement.capture", form).params()
+                .containsKey("accept_visual_loss"), "jamais accepté par défaut (#903)");
+        form.put("accept_visual_loss", "true");
+        assertEquals("true", AgentActionCatalog.validate("building.placement.capture", form).params()
+                .get("accept_visual_loss"));
+    }
+
+    @Test
     void giveAmountIsBounded() {
         assertFalse(AgentActionCatalog.validate("player.item.give",
                 Map.of("player", "X", "item_id", "rpgquest:rune_rappel", "amount", "0", "confirm", "true")).valid());

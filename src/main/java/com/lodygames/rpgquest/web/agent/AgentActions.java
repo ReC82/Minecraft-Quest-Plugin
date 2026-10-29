@@ -2222,7 +2222,13 @@ public interface AgentActions {
      */
     record BuildingCaptureRequest(String siteId, int west, int east, int down, int up, int north,
                                   int south, String newId, String name, String description,
-                                  String category) {
+                                  String category, boolean acceptVisualLoss) {
+
+        public BuildingCaptureRequest(String siteId, int west, int east, int down, int up, int north,
+                                      int south, String newId, String name, String description,
+                                      String category) {
+            this(siteId, west, east, down, up, north, south, newId, name, description, category, false);
+        }
     }
 
     /** Issue #246 — l'aperçu d'une capture, à plat pour le panel. */

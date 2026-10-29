@@ -146,6 +146,16 @@ class AgentActionExecutorTest {
         assertEquals(AgentActionOutcome.SUCCESS, outcome.status(), outcome.message());
         assertEquals("0123456789abcdef0123456789abcdef", actions.lastCaptureToken);
         assertEquals("hutte_deco", outcome.details().get("new_id"));
+        assertFalse(actions.lastCaptureRequest.acceptVisualLoss(), "jamais accepté par défaut (#903)");
+    }
+
+    @Test
+    void theVisualLossAcknowledgementTravelsOnlyWhenExplicit() {
+        run(new AgentAction("cap6", "building.placement.capture",
+                Map.of("id", "buildsite_0003", "new_id", "hutte_deco", "name", "Hutte", "confirm", "true",
+                        "token", "0123456789abcdef0123456789abcdef", "accept_visual_loss", "true")));
+
+        assertTrue(actions.lastCaptureRequest.acceptVisualLoss());
     }
 
     // ---- building.plan.audit (issue #94, lot F) ---------------------------------------------

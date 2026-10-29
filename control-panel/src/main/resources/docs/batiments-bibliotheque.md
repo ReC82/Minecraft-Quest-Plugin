@@ -208,6 +208,26 @@ Il porte aussi un **jeton**. Si l'emplacement, le bâtiment posé ou la définit
 entre l'aperçu et votre confirmation, l'opération est **refusée** — plutôt que d'appliquer une
 décision prise sur un état qui n'existe plus. Relancez l'aperçu et recommencez.
 
+## Capturer une construction retouchée
+
+« Capturer la construction actuelle » (fiche d'un emplacement occupé) enregistre les blocs
+réellement présents comme un **nouveau** bâtiment. La construction dans le monde, le bâtiment
+d'origine et les variantes déjà enregistrées ne sont ni modifiés ni remplacés.
+
+L'aperçu dit d'abord combien de blocs seront enregistrés avec leur position et leurs propriétés
+(orientation, escaliers, dalles…), puis détaille les **blocs avec contenu** :
+
+- **Livres visibles conservés comme décor** — bibliothèques sculptées, pupitres : les livres restent
+  affichés, mais ne sont pas copiés (titre, enchantement, texte écrit). Dans la variante posée, on
+  ne peut pas les prendre : ils disparaissent sans rien donner.
+- **Objets affichés perdus** — objets posés sur une étagère, nourriture d'un feu de camp, motifs d'un
+  pot décoré : ils ne seront pas dans la variante. La capture exige alors de **cocher** « J'ai
+  compris… » ; sans cette case, elle est refusée.
+- **Contenu non copié** — coffres, tonneaux… : leur contenu ne se voit pas et n'est jamais copié.
+
+Les **entités** (cadres, tableaux, animaux) ne font pas partie d'une capture : elles sont citées en
+note, et restent en place dans le monde.
+
 ## Si le collage échoue
 
 L'ancien bâtiment est **remis en place** et l'opération n'a simplement pas eu lieu. La fiche n'est

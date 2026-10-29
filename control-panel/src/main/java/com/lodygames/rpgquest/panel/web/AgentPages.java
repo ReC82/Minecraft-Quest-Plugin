@@ -3271,10 +3271,13 @@ public final class AgentPages {
                 + "jeu comprises — comme un <strong>nouveau</strong> bâtiment de la bibliothèque. Aucun bloc "
                 + "n'est modifié, le bâtiment d'origine et ce placement restent inchangés, aucun fichier "
                 + "n'est écrasé.</p>");
-        sb.append("<ul class=\"field-help\"><li><strong>Air</strong> : capturé — posée ailleurs, la "
-                + "variante remplace toute son emprise, comme tout bâtiment.</li>"
-                + "<li><strong>Conteneurs</strong> (coffres, tonneaux, fours, pupitres…) : capturés "
-                + "<strong>vides</strong> ; leur contenu n'est jamais exporté.</li>"
+        sb.append("<ul class=\"field-help\"><li><strong>Blocs</strong> : enregistrés à leur position avec "
+                + "leurs propriétés (orientation, escaliers, dalles…). L'air est capturé aussi — posée "
+                + "ailleurs, la variante remplace toute son emprise, comme tout bâtiment.</li>"
+                + "<li><strong>Blocs avec contenu</strong> (coffres, pupitres, étagères…) : le bloc est "
+                + "gardé, son contenu n'est <strong>jamais copié</strong>. Les livres visibles d'une "
+                + "bibliothèque sculptée ou d'un pupitre restent affichés comme décor ; les objets posés "
+                + "sur une étagère disparaissent — l'aperçu le détaille et demande votre accord.</li>"
                 + "<li><strong>Entités</strong> (cadres, tableaux, supports d'armure, animaux) : "
                 + "<strong>non capturées</strong> — elles sont listées dans l'aperçu.</li>"
                 + "<li>Enseignes, bannières, têtes et pots de fleurs : capturés avec leur contenu.</li></ul>");
@@ -3334,6 +3337,38 @@ public final class AgentPages {
         sb.append("</div>");
     }
 
+    /**
+     * Issue #903 — ce que deviennent les blocs à contenu et les entités, en français : un message
+     * orienté résultat, puis « Blocs avec contenu » (perte visible en avertissement, le reste en
+     * information), puis « Entités non incluses » en note discrète. Un plugin antérieur à #903 ne
+     * fournit que les compteurs bruts : ils sont alors affichés tels quels.
+     */
+    private static String captureContentBlock(Map<String, Object> preview) {
+        StringBuilder sb = new StringBuilder();
+        String headline = str(preview.get("headline"));
+        if (headline.isEmpty()) {
+            return sb.append("<p class=\"field-help\">").append(Http.esc(str(preview.get("non_air"))))
+                    .append(" blocs non-air, ").append(Http.esc(str(preview.get("containers"))))
+                    .append(" bloc(s) à contenu capturés sans leur contenu.</p>").toString();
+        }
+        sb.append(Ui.banner("success", Http.esc(headline)));
+        sb.append(detailSection("book", "Blocs avec contenu"));
+        List<Object> groups = asList(preview.get("content_groups"));
+        if (groups.isEmpty()) {
+            sb.append("<p class=\"field-help\">Aucun bloc à contenu dans la zone.</p>");
+        }
+        for (Object raw : groups) {
+            Map<String, Object> group = asMap(raw);
+            String text = "<strong>" + Http.esc(str(group.get("title"))) + "</strong> — "
+                    + Http.esc(str(group.get("text")));
+            sb.append(Ui.banner("VISUAL_LOST".equals(str(group.get("fate"))) ? "warning" : "info", text));
+        }
+        String entities = str(preview.get("entity_note"));
+        sb.append(detailSection("npc", "Entités non incluses")).append("<p class=\"field-help muted\">")
+                .append(entities.isEmpty() ? "Aucune entité dans la zone." : Http.esc(entities)).append("</p>");
+        return sb.toString();
+    }
+
     /** L'aperçu de la capture et, seulement s'il est accepté, le bouton qui capture. */
     private String buildingCapturePreviewBlock(Session session, String agentId,
                                                com.lodygames.rpgquest.panel.building.BuildingSiteView site,
@@ -3353,18 +3388,13 @@ public final class AgentPages {
         dlRow(sb, "Ancre locale", "<code class=\"tid\">" + Http.esc(str(preview.get("local_anchor"))) + "</code>");
         dlRow(sb, "Façade de référence", Http.esc(str(preview.get("front"))));
         if (preview.containsKey("non_air")) {
-            dlRow(sb, "Blocs non-air", Http.esc(str(preview.get("non_air"))));
-            dlRow(sb, "Conteneurs (capturés vides)", Http.esc(str(preview.get("containers")))
-                    + " <span class=\"muted\">dont " + Http.esc(str(preview.get("filled_containers")))
-                    + " non vide(s)</span>");
-            StringBuilder entities = new StringBuilder();
-            asMap(preview.get("entity_types")).forEach((type, count) -> entities.append(entities.isEmpty() ? "" : ", ")
-                    .append(Http.esc(str(count))).append(" × ").append(Http.esc(type)));
-            dlRow(sb, "Entités non capturées", entities.isEmpty() ? "aucune" : entities.toString());
             dlRow(sb, "Matériaux principaux", Http.esc(String.join(", ",
                     asList(preview.get("materials")).stream().map(AgentPages::str).toList())));
         }
         sb.append("</dl>");
+        if (preview.containsKey("non_air")) {
+            sb.append(captureContentBlock(preview));
+        }
         for (Object refusal : asList(preview.get("refusals"))) {
             sb.append(Ui.banner("error", Http.esc(str(refusal))));
         }
@@ -3378,8 +3408,11 @@ public final class AgentPages {
         }
         sb.append("<div class=\"danger-zone\"><div class=\"dz-title\">Capturer — ajoute un bâtiment à la "
                 + "bibliothèque</div>");
-        sb.append("<p class=\"field-help\">Le monde n'est pas modifié. Le nouveau bâtiment pourra ensuite "
-                + "être posé sur un <strong>autre</strong> emplacement, par « Poser un bâtiment » sur sa fiche.</p>");
+        sb.append("<p class=\"field-help\">La capture <strong>crée une nouvelle définition</strong> « ")
+                .append(Http.esc(str(preview.get("name")))).append(" » (version 1). La construction source "
+                + "dans le monde n'est pas modifiée, et ni le bâtiment d'origine ni une variante déjà "
+                + "enregistrée ne sont remplacés. Le nouveau bâtiment pourra ensuite être posé sur un "
+                + "<strong>autre</strong> emplacement, par « Poser un bâtiment » sur sa fiche.</p>");
         sb.append(formStart(session, agentId, "building.placement.capture", "/buildings/sites", ""));
         sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(site.id())).append("\">");
         for (String key : new String[] {"new_id", "name", "description", "category", "token"}) {
@@ -3391,10 +3424,18 @@ public final class AgentPages {
             sb.append("<input type=\"hidden\" name=\"margin_").append(side[0]).append("\" value=\"")
                     .append(Http.esc(String.valueOf(margins.getOrDefault(side[0], 0)))).append("\">");
         }
+        String acknowledgement = str(preview.get("acknowledgement"));
+        if (!acknowledgement.isEmpty()) {
+            // Issue #903 : une variante qui perd des objets visibles ne part jamais sans accord coché.
+            sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"accept_visual_loss\" "
+                    + "value=\"true\" required> ").append(Http.esc(acknowledgement)).append("</label>");
+        }
         sb.append(mutationConsent("building.placement.capture", "Capturer l'état actuel de « " + site.name()
-                + " » comme « " + str(preview.get("name")) + " » (conteneurs vides, entités non capturées)", null));
+                + " » comme nouveau bâtiment « " + str(preview.get("name")) + " » (contenu des blocs non "
+                + "copié, entités non capturées)", null));
         sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" type=\"submit\">")
-                .append(Icons.icon("save")).append("Capturer la construction actuelle</button></div></form></div>");
+                .append(Icons.icon("save")).append(acknowledgement.isEmpty() ? "Capturer la construction actuelle"
+                        : "Capturer quand même, sans les objets affichés").append("</button></div></form></div>");
         return sb.toString();
     }
 

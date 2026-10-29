@@ -61,8 +61,14 @@ côté serveur qu'avant (posé, portail, publié, incertain, en cours, rôle, ve
 
 ### Action serveur
 
-**À effectuer, non déployé** (déploiement à autoriser par le propriétaire) : PlugAdmin seul
-(`scripts/plugadmin/deploy.sh`), JAR Minecraft inchangé. **Aucune migration** : la colonne existante
+**Effectué le 29/10/2026 à 17:31 (heure de Paris)**, sur autorisation écrite du propriétaire (commentaire #881 du
+29/10 16:18 UTC) : PlugAdmin seul `12365fb5` (`scripts/plugadmin/deploy.sh`, `DEPLOYED` : CI verte sur `12365fb`,
+release précédente `002facdb` gardée sous `/opt/plugadmin/releases/20261029-173122`). Instantané préalable
+`/var/lib/plugadmin/control-panel.db-20261029T163114Z-pre-881.backup` (`integrity_check` ok). JAR Minecraft
+inchangé (`002facdb`), serveur Minecraft non redémarré. La partie PlugAdmin de #903 (PR #904, aperçu de capture en
+français) part avec cette version ; le JAR #903 n'étant pas déployé, l'aperçu garde l'affichage antérieur.
+
+Initialement : PlugAdmin seul (`scripts/plugadmin/deploy.sh`), JAR Minecraft inchangé. **Aucune migration** : la colonne existante
 `building_project.archived` (toujours 0 sur DEV au 29/10) porte la corbeille. Aucun projet existant n'est modifié
 au démarrage.
 

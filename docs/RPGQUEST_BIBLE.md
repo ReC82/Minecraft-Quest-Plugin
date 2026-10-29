@@ -1888,23 +1888,47 @@ dernier `portal.list` ; nombre d'emplacements et lien « Voir où utilisé »), 
 vérifier** (aucun relevé des emplacements chargé, ou bâtiment disparu du relevé de la bibliothèque sans retrait
 connu), plus son état Bibliothèque (#290). La présence en bibliothèque ne vaut **pas** « utilisé ».
 
-La fiche d'un projet porte, repliée, la zone **« Supprimer le projet — <usage> »** : ce qui serait effacé
-(**données du panel uniquement** : la fiche, toutes ses versions de plan — y compris celles retirées de la
-liste — et leurs révisions, liens de vérification et jetons, conceptions détaillées, conceptions automatiques,
-images de référence, avec leurs nombres) et ce qui est **conservé** (bâtiment de la bibliothèque et versions
-archivées, bâtiments posés, emplacements et sauvegardes de terrain, portails, historique des actions de
-l'agent où un plan reste importable, journal IA #739, journal d'audit ; aucun bloc du monde). Le formulaire
-(case « Je supprime définitivement… », bouton rouge) n'apparaît que si la suppression est permise ; sinon
-les motifs sont listés, sans option « forcer ». **Refus côté serveur**, revérifiés à la soumission même
+**Corbeille (retour propriétaire du 29/10)** — retirer un projet se fait en **deux gestes séparés** :
+
+1. La fiche d'un projet porte, repliée, la zone **« Mettre à la corbeille — <usage> »** (ancre `#supprimer`) :
+   **rien n'est effacé**, le projet quitte la liste principale avec ses versions de plan, sa conception et ses
+   images, et peut être **restauré** tel quel. Le bouton n'apparaît que si le retrait est permis ; sinon les
+   motifs sont listés, sans option « forcer ». La fiche d'un projet à la corbeille renvoie vers la corbeille.
+2. La **corbeille** (`/buildings/workshop/trash`, bouton « Corbeille (N) » en tête de l'Atelier) liste les projets
+   retirés (qui, quand, nombre de versions, usage, emplacement d'origine). Par projet : **« Restaurer dans
+   l'Atelier »** et, replié, **« Supprimer définitivement… »** : ce qui serait effacé (**données du panel
+   uniquement** : la fiche, toutes ses versions de plan — y compris celles retirées de la liste — et leurs
+   révisions, liens de vérification et jetons, conceptions détaillées, conceptions automatiques, images de
+   référence, avec leurs nombres) et ce qui est **conservé** (bâtiment de la bibliothèque et versions archivées,
+   bâtiments posés, emplacements et sauvegardes de terrain, portails, historique des actions de l'agent où un
+   plan reste importable, journal IA #739, journal d'audit ; aucun bloc du monde). Confirmation forte :
+   **recopier l'identifiant du bâtiment** et cocher « Je supprime définitivement… ». Un projet hors corbeille
+   n'est **jamais** supprimé définitivement, même par une requête forgée (`project_delete` depuis la fiche ou
+   sur un projet restauré entre-temps : refusé).
+
+**Refus côté serveur** (mise à la corbeille **et** suppression définitive), revérifiés à la soumission même
 pour une requête forgée : bâtiment posé ou cité par un portail ; usage incertain ; bâtiment **publié** dans
 la bibliothèque (orienté vers la fiche Bibliothèque et « Supprimer ce bâtiment et toutes ses versions »,
-#644 — supprimer le projet ne retire jamais une définition publiée) ; vérification / enregistrement en
+#644 — retirer le projet ne retire jamais une définition publiée) ; vérification / enregistrement en
 attente de réponse ou conception automatique en cours ; rôle sans `BUILDING_WRITE` (la page reste gardée
-par `AI_USE`) ; case non cochée ; fiche modifiée depuis l'affichage (`project_version`). Un bâtiment retiré
-(#284) ou supprimé (#644) de la bibliothèque n'empêche pas la suppression du projet : ses versions
-archivées restent côté serveur. Effacement en **une transaction** (tout ou rien) ; le second clic répond
-« Ce projet a déjà été supprimé : rien de plus n'a été fait. ». Audit `building.project.delete` (OK ou
-DENIED avec le motif). Aucune action n'est envoyée au serveur Minecraft, aucune migration de base.
+par `AI_USE`) ; fiche modifiée depuis l'affichage (`project_version`, qui avance aussi à chaque passage par la
+corbeille). Un bâtiment retiré (#284) ou supprimé (#644) de la bibliothèque n'empêche pas le retrait du
+projet : ses versions archivées restent côté serveur. Suppression définitive en **une transaction** (tout ou
+rien). Les seconds clics répondent « rien de plus n'a été fait ».
+
+**Origine distincte de l'usage** : un projet repris d'un emplacement affiche « Importé de l'emplacement
+« <nom> » `<id>` : porte aujourd'hui le bâtiment `<id>` vN » (ou libre / inconnu). Le nom de l'emplacement, le
+nom du projet et le bâtiment posé sont trois choses distinctes : sur DEV, le projet « Bibliothèque du Hub »
+(`bibliotheque_du_hub`) vient de `buildsite_0009`, qui porte `la_grande_librairie` v1.
+
+**Historique visible** : `/actions` → onglet **« Opérations du panel (N) »** (`?status=panel`) liste les
+opérations faites par le panel seul sur les projets — création, reprise, modification, images, mise à la
+corbeille, restauration, suppression définitive — **refus compris** avec leur motif, l'acteur, la date et un lien
+« Ouvrir » vers la fiche ou la corbeille (« n'existe plus » après une suppression définitive). Source : le journal
+d'audit persistant (`audit_log`, actions `building.project.*`), aucune donnée nouvelle. Avant ce lot,
+`building.project.delete` était bien écrit dans l'audit mais aucune page ne le montrait. Aucune action n'est
+envoyée au serveur Minecraft, **aucune migration de base** : la colonne `building_project.archived`, présente
+depuis #267 et jamais posée à 1, porte la corbeille.
 
 Les garanties de #256 s'appliquent aux projets : redirection après chaque soumission, jeton à usage unique
 sur les gestes payants, versions et contrôle de concurrence, vérifications rattachées à leur version,

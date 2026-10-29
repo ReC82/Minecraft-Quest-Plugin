@@ -282,7 +282,7 @@ public final class BuildingProjectStore {
         }
     }
 
-    /** Les projets non archivés, le plus récemment modifié d'abord. */
+    /** Les projets hors corbeille, le plus récemment modifié d'abord. */
     public List<BuildingProject> list(String agentId) {
         List<BuildingProject> out = new ArrayList<>();
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(
@@ -300,17 +300,60 @@ public final class BuildingProjectStore {
         return out;
     }
 
-    public boolean archive(String id, String by) {
+    /** Issue d'un passage à la corbeille ou d'une restauration (#881). */
+    public enum TrashOutcome { DONE, STALE, NOT_FOUND }
+
+    /**
+     * Les projets de la corbeille (#881), le plus récemment mis à la corbeille d'abord. La colonne
+     * {@code archived} existait déjà, jamais posée à 1 avant #881 : aucune migration.
+     */
+    public List<BuildingProject> trashed(String agentId) {
+        List<BuildingProject> out = new ArrayList<>();
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(
-                "UPDATE building_project SET archived = 1, updated_by = ?, updated_at = ? "
-                        + "WHERE id = ? AND archived = 0")) {
-            ps.setString(1, by);
-            ps.setString(2, STAMP.format(Instant.now()));
-            ps.setString(3, id);
-            return ps.executeUpdate() == 1;
+                "SELECT * FROM building_project WHERE agent_id = ? AND archived = 1 "
+                        + "ORDER BY updated_at DESC, created_at DESC")) {
+            ps.setString(1, agentId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(read(rs));
+                }
+            }
         } catch (SQLException e) {
-            throw new IllegalStateException("Archivage du projet impossible (" + id + ")", e);
+            throw new IllegalStateException("Lecture de la corbeille impossible", e);
         }
+        return out;
+    }
+
+    /**
+     * Met le projet à la corbeille (#881) : il quitte la liste, rien n'est effacé. La version
+     * avance, pour qu'un second onglet resté ouvert ne puisse plus le modifier ni le supprimer.
+     */
+    public TrashOutcome trash(String id, int expectedVersion, String by) {
+        return setArchived(id, expectedVersion, by, true);
+    }
+
+    /** Ramène un projet de la corbeille dans la liste, tel qu'il y était entré (#881). */
+    public TrashOutcome restore(String id, int expectedVersion, String by) {
+        return setArchived(id, expectedVersion, by, false);
+    }
+
+    private TrashOutcome setArchived(String id, int expectedVersion, String by, boolean archived) {
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(
+                "UPDATE building_project SET archived = ?, version = version + 1, updated_by = ?, updated_at = ? "
+                        + "WHERE id = ? AND version = ? AND archived = ?")) {
+            ps.setInt(1, archived ? 1 : 0);
+            ps.setString(2, by);
+            ps.setString(3, STAMP.format(Instant.now()));
+            ps.setString(4, id);
+            ps.setInt(5, expectedVersion);
+            ps.setInt(6, archived ? 0 : 1);
+            if (ps.executeUpdate() == 1) {
+                return TrashOutcome.DONE;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Corbeille du projet inaccessible (" + id + ")", e);
+        }
+        return find(id).filter(p -> p.archived() != archived).isPresent() ? TrashOutcome.STALE : TrashOutcome.NOT_FOUND;
     }
 
     /** Marque le projet comme modifié (un brouillon y a été ajouté) : il remonte dans la liste. */

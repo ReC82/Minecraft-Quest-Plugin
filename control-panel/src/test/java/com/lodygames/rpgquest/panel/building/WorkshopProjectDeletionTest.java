@@ -44,12 +44,17 @@ class WorkshopProjectDeletionTest {
         var preview = deletion.preview(gone.id());
         assertEquals(2, preview.versions());
 
-        assertEquals(WorkshopProjectDeletion.Outcome.DELETED, deletion.delete(gone.id(), gone.version()));
+        assertEquals(WorkshopProjectDeletion.Outcome.NOT_IN_TRASH, deletion.delete(gone.id(), gone.version()),
+                "jamais hors de la corbeille");
+        assertEquals(BuildingProjectStore.TrashOutcome.DONE,
+                new BuildingProjectStore(db()).trash(gone.id(), gone.version(), "owner"));
+        int trashed = gone.version() + 1;
+        assertEquals(WorkshopProjectDeletion.Outcome.DELETED, deletion.delete(gone.id(), trashed));
         assertTrue(new BuildingProjectStore(db()).find(gone.id()).isEmpty());
         assertTrue(new BuildingPlanDraftStore(db()).forProject("agent", gone.id()).isEmpty());
         assertEquals(1, new BuildingPlanDraftStore(db()).forProject("agent", kept.id()).size());
         assertEquals(0, deletion.preview(gone.id()).versions());
-        assertEquals(WorkshopProjectDeletion.Outcome.NOT_FOUND, deletion.delete(gone.id(), gone.version()),
+        assertEquals(WorkshopProjectDeletion.Outcome.NOT_FOUND, deletion.delete(gone.id(), trashed),
                 "le second clic n'efface rien de plus");
     }
 
@@ -58,11 +63,34 @@ class WorkshopProjectDeletionTest {
         BuildingProject p = project("busy_one");
         draft(p.id());
         var deletion = new WorkshopProjectDeletion(db());
-        assertEquals(WorkshopProjectDeletion.Outcome.STALE, deletion.delete(p.id(), p.version() + 1));
+        new BuildingProjectStore(db()).trash(p.id(), p.version(), "owner");
+        int trashed = p.version() + 1;
+        assertEquals(WorkshopProjectDeletion.Outcome.STALE, deletion.delete(p.id(), trashed + 1));
         new BuildingDesignRunStore(db()).start("agent", p.id(), "tok", "openai", "STANDARD", 3, "owner");
-        assertEquals(WorkshopProjectDeletion.Outcome.BUSY, deletion.delete(p.id(), p.version()));
+        assertEquals(WorkshopProjectDeletion.Outcome.BUSY, deletion.delete(p.id(), trashed));
         assertTrue(new BuildingProjectStore(db()).find(p.id()).isPresent());
         assertEquals(1, new BuildingPlanDraftStore(db()).forProject("agent", p.id()).size(), "rien d'effacé");
+    }
+
+    @Test
+    void theTrashKeepsEverythingAndRestoresItAsItWas() {
+        var store = new BuildingProjectStore(db());
+        BuildingProject p = project("bin_one");
+        draft(p.id());
+        assertEquals(BuildingProjectStore.TrashOutcome.STALE, store.trash(p.id(), p.version() + 5, "owner"));
+        assertEquals(BuildingProjectStore.TrashOutcome.DONE, store.trash(p.id(), p.version(), "eddy"));
+        assertTrue(store.list("agent").isEmpty(), "hors de la liste");
+        BuildingProject inBin = store.trashed("agent").get(0);
+        assertEquals("eddy", inBin.updatedBy());
+        assertEquals(1, new BuildingPlanDraftStore(db()).forProject("agent", p.id()).size(), "rien d'effacé");
+        assertEquals(BuildingProjectStore.TrashOutcome.NOT_FOUND, store.trash(p.id(), inBin.version(), "eddy"),
+                "déjà à la corbeille");
+        assertEquals(BuildingProjectStore.TrashOutcome.STALE, store.restore(p.id(), p.version(), "owner"),
+                "une version vue avant la corbeille ne restaure pas");
+        assertEquals(BuildingProjectStore.TrashOutcome.DONE, store.restore(p.id(), inBin.version(), "owner"));
+        assertEquals(1, store.list("agent").size());
+        assertTrue(store.trashed("agent").isEmpty());
+        assertEquals(p.name(), store.list("agent").get(0).name());
     }
 
     @Test

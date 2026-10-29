@@ -14,6 +14,7 @@ import java.util.function.Supplier;
 import org.bukkit.Chunk;
 import org.bukkit.ChunkSnapshot;
 import org.bukkit.GameRules;
+import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -170,10 +171,11 @@ public final class OfflineGrowthService implements PluginService, Listener {
             while (budget > 0 && job.next < job.plants.size()) {
                 PlantPosition position = job.plants.get(job.next++);
                 Block block = job.world.getBlockAt(position.x, position.y, position.z);
-                if (PlantGrowthSimulator.PLANTS.contains(block.getType())) {
+                Material type = block.getType();
+                if (PlantGrowthSimulator.PLANTS.contains(type)) {
                     job.changed += simulator.simulate(block, position.claim, job.randomTicks);
                 }
-                budget--;
+                budget -= PlantGrowthSimulator.cost(type);
             }
             job.nanos += System.nanoTime() - start;
             if (job.next < job.plants.size()) {

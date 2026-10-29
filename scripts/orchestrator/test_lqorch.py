@@ -426,6 +426,15 @@ class AutoSelectTest(Base):
         self.mod.update_task(self.con, 829, status="WAITING_OWNER", auto_seen_at=self.mod.iso())
         self.assertIsNone(self.picked())
 
+    def test_owner_comment_during_another_tickets_session_rearms(self):
+        self.gh.issue(734, "agent:auto", "priority:P1", updated="2026-10-25T05:00:00Z")
+        self.local(734, "WAITING_OWNER")
+        self.con.execute("INSERT INTO sessions(id,issue,started_at,ended_at,outcome) VALUES('s881',881,"
+                         "'2026-10-29T15:31:44Z','2026-10-29T16:07:54Z','COMPLETED')")
+        self.con.commit()
+        self.gh.comment(734, "2026-10-29T16:00:20Z", "## Décision propriétaire — 29/10")
+        self.assertEqual(self.picked(), 734)
+
     def test_held_ticket_is_excluded_even_with_owner_activity_until_released(self):
         self.gh.issue(54, "agent:auto", "priority:P0", updated="2026-10-25T05:00:00Z")
         self.local(54, "WAITING_OWNER")

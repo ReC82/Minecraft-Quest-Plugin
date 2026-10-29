@@ -276,7 +276,9 @@ PRIORITY_LABELS = {"priority:P0": 0, "priority:P1": 1, "priority:P2": 2, "priori
 EXCLUDE_LABELS = {"blocked", "duplicate", "invalid", "wontfix", "in-progress"}
 # Les sessions et le superviseur terminent leurs commentaires GitHub par ce marqueur.
 SESSION_MARKER = "<!-- lqorch"
-# Un commentaire posté pendant une session (ou juste après) vient de la session.
+# Un commentaire non marqué posté pendant une session DU MÊME TICKET (ou juste après) vient de cette
+# session. Une session ne masque jamais les commentaires des autres tickets : le propriétaire écrit
+# souvent pendant qu'une autre session tourne (29/10 : décisions #734/#813 pendant la session #881).
 SESSION_MARGIN_SECONDS = 300
 DEPS_LINE = re.compile(r"^[\s>*_-]*(?:\*\*)?\s*(?:dépend(?:ances?)?(?:\s+de)?|depends\s+on|bloqué\s+par"
                        r"|blocked\s+by|prérequis)\b.*$", re.IGNORECASE | re.MULTILINE)
@@ -313,11 +315,12 @@ def merged_deps(local, body):
     return ",".join(out + [n for n in body_deps(body) if n not in out])
 
 
-def session_windows(con):
+def session_windows(con, issue):
     margin = SESSION_MARGIN_SECONDS
     return [(s["started_at"], iso(datetime.fromtimestamp(parse_iso(s["ended_at"] or iso()).timestamp() + margin,
                                                          timezone.utc)))
-            for s in con.execute("SELECT started_at, ended_at FROM sessions WHERE started_at IS NOT NULL")]
+            for s in con.execute("SELECT started_at, ended_at FROM sessions WHERE issue=? AND started_at IS NOT NULL",
+                                 (issue,))]
 
 
 def seen_at(con, t):
@@ -352,7 +355,6 @@ def auto_candidates(con, dry=False):
     if issues is None:
         return None, [dict(issue=None, title="", reason="GitHub injoignable : aucune sélection automatique.")]
     prs = gh_list(f"repos/{REPO}/pulls?state=open")
-    windows = session_windows(con)
     eligible, excluded = [], []
     for it in issues:
         if "pull_request" in it:
@@ -390,7 +392,7 @@ def auto_candidates(con, dry=False):
             if (it.get("updated_at") or "") <= seen:
                 skip(f"{t['status']} : aucune activité GitHub depuis {seen}")
                 continue
-            activity = external_activity(n, seen, windows)
+            activity = external_activity(n, seen, session_windows(con, n))
             if activity is None:
                 skip("commentaires GitHub illisibles")
                 continue

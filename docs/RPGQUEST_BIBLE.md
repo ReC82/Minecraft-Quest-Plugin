@@ -1926,7 +1926,13 @@ opérations faites par le panel seul sur les projets — création, reprise, mod
 corbeille, restauration, suppression définitive — **refus compris** avec leur motif, l'acteur, la date et un lien
 « Ouvrir » vers la fiche ou la corbeille (« n'existe plus » après une suppression définitive). Source : le journal
 d'audit persistant (`audit_log`, actions `building.project.*`), aucune donnée nouvelle. Avant ce lot,
-`building.project.delete` était bien écrit dans l'audit mais aucune page ne le montrait. Aucune action n'est
+`building.project.delete` était bien écrit dans l'audit mais aucune page ne le montrait. **Retour visible (TC-442, 29/10)** : ces opérations ne sont pas des actions agent, donc ni la cloche ni
+l'onglet « Tous » de `/actions` ne les montraient. Désormais : (1) la cloche affiche, sous les actions agent, une
+section « Opérations du panel (Atelier) » avec les 3 derniers retraits (corbeille, restauration, suppression
+définitive ; pas les créations ni les enregistrements) et un lien vers l'onglet ; (2) l'onglet « Tous » de
+`/actions` porte un bandeau « Les opérations de l'Atelier… ne figurent pas dans cette liste. Dernière : … » avec
+le lien « Voir les opérations du panel (N) » ; (3) le message de succès d'une corbeille, d'une restauration ou
+d'une suppression définitive se termine par « Trace : Historique › onglet « Opérations du panel » ». Aucune action n'est
 envoyée au serveur Minecraft, **aucune migration de base** : la colonne `building_project.archived`, présente
 depuis #267 et jamais posée à 1, porte la corbeille.
 

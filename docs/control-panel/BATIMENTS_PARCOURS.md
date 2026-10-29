@@ -81,7 +81,9 @@ jeu** (avec « Voir où utilisé »), **Non utilisé** ou **Utilisation à véri
 recopier) — ce qui n'efface que ce que le panel garde de la conception. Les deux gestes ne sont permis que si le
 bâtiment n'est ni posé, ni lié à un portail, ni publié dans la bibliothèque (pour un bâtiment publié, passer
 par la Bibliothèque, #644), et si l'usage est vérifiable. Aucun bloc du monde n'est touché. Chaque geste, refus
-compris, apparaît dans **Historique → « Opérations du panel »**.
+compris, apparaît dans **Historique → « Opérations du panel »**. Les trois derniers retraits (corbeille, restauration,
+suppression définitive) apparaissent aussi dans la **cloche**, section « Opérations du panel (Atelier) », et
+l'onglet « Tous » de l'Historique rappelle où les trouver.
 
 ## Ce que l'ancien parcours devient
 

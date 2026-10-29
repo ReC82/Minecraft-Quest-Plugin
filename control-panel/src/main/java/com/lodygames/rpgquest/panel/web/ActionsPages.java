@@ -23,6 +23,73 @@ public final class ActionsPages {
     public static final int PAGE_SIZE = 25;
     /** Issue #169 : filtre des demandes refusées par le panel avant tout envoi à l'agent. */
     static final String REFUSED_SLUG = "refused";
+    /** Issue #881 : filtre des opérations faites par le panel seul (Atelier), sans action agent. */
+    static final String PANEL_SLUG = "panel";
+
+    /**
+     * Une opération faite <strong>par le panel seul</strong> sur un projet de l'Atelier (création,
+     * corbeille, restauration, suppression définitive, refus…), lue dans le journal d'audit : rien
+     * n'est envoyé au serveur Minecraft, il n'y a donc pas de fiche d'action agent.
+     *
+     * @param link fiche ou corbeille du projet s'il existe encore, vide s'il a été supprimé
+     */
+    public record PanelOperation(Instant at, String actor, String action, boolean ok, String projectId,
+                                 String buildingId, String name, String reason, String link) {
+
+        /** Le projet tel qu'il est aujourd'hui : où l'ouvrir et son nom, ou absent s'il n'existe plus. */
+        public record ProjectRef(String link, String name) {
+        }
+
+        /**
+         * {@code target} d'audit : {@code project=… building=… name=<le reste>} — les entrées antérieures
+         * à #881 n'ont que {@code project=…} : le nom vient alors du projet s'il existe encore.
+         */
+        public static PanelOperation of(Instant at, String actor, String action, String result, String auditTarget,
+                                        String details,
+                                        java.util.function.Function<String, Optional<ProjectRef>> current) {
+            String t = nz(auditTarget);
+            String name = "";
+            int n = t.indexOf(" name=");
+            if (n >= 0) {
+                name = t.substring(n + 6);
+                t = t.substring(0, n);
+            }
+            String project = "";
+            String building = "";
+            for (String part : t.split(" ")) {
+                if (part.startsWith("project=")) {
+                    project = part.substring(8);
+                } else if (part.startsWith("building=")) {
+                    building = part.substring(9);
+                }
+            }
+            Optional<ProjectRef> now = project.isEmpty() ? Optional.empty() : current.apply(project);
+            if (name.isEmpty()) {
+                name = now.map(ProjectRef::name).orElse("");
+            }
+            return new PanelOperation(at, nz(actor), nz(action), "OK".equals(result), project, building, name,
+                    nz(details), now.map(ProjectRef::link).orElse(""));
+        }
+
+        public String label() {
+            return switch (action) {
+                case "building.project.create" -> "Projet créé";
+                case "building.project.import" -> "Projet repris d'un emplacement";
+                case "building.project.save" -> "Projet modifié";
+                case "building.project.image.add" -> "Image de référence ajoutée";
+                case "building.project.image.remove" -> "Image de référence retirée";
+                case "building.project.trash" -> "Mis à la corbeille";
+                case "building.project.restore" -> "Restauré depuis la corbeille";
+                case "building.project.delete" -> "Supprimé définitivement";
+                default -> action;
+            };
+        }
+
+        String searchText() {
+            return (label() + " " + action + " " + name + " " + buildingId + " " + projectId + " " + reason + " "
+                    + actor).toLowerCase(Locale.ROOT);
+        }
+    }
 
     /**
      * Une demande refusée par le panel <strong>avant</strong> la file (confirmation manquante,
@@ -55,14 +122,20 @@ public final class ActionsPages {
      * @param search  texte de recherche (peut être vide)
      * @param page    page 1-indexée
      */
-    public record Query(ActionView.Group group, ActionView.Domain domain, String search, int page, boolean refused) {
+    public record Query(ActionView.Group group, ActionView.Domain domain, String search, int page, boolean refused,
+                        boolean panel) {
 
         public Query(ActionView.Group group, ActionView.Domain domain, String search, int page) {
-            this(group, domain, search, page, false);
+            this(group, domain, search, page, false, false);
+        }
+
+        public Query(ActionView.Group group, ActionView.Domain domain, String search, int page, boolean refused) {
+            this(group, domain, search, page, refused, false);
         }
 
         public static Query parse(Map<String, String> q) {
             boolean refused = REFUSED_SLUG.equals(q.getOrDefault("status", ""));
+            boolean panel = PANEL_SLUG.equals(q.getOrDefault("status", ""));
             ActionView.Group g = ActionView.Group.fromSlug(q.getOrDefault("status", "")).orElse(null);
             ActionView.Domain d = ActionView.Domain.fromSlug(q.getOrDefault("domain", "")).orElse(null);
             String s = q.getOrDefault("q", "").trim();
@@ -72,11 +145,11 @@ public final class ActionsPages {
             } catch (NumberFormatException ignored) {
                 // page 1
             }
-            return new Query(g, d, s, p, refused);
+            return new Query(g, d, s, p, refused, panel);
         }
 
         String statusSlug() {
-            return refused ? REFUSED_SLUG : group == null ? "all" : group.slug();
+            return refused ? REFUSED_SLUG : panel ? PANEL_SLUG : group == null ? "all" : group.slug();
         }
 
         String domainSlug() {
@@ -135,8 +208,17 @@ public final class ActionsPages {
     /** @param names pseudos connus ({@code player.catalog}) : la cible joueur s'affiche par son pseudo */
     public static String list(List<AgentActionRow> all, List<Refusal> refusals, Query q, Instant now,
                               PlayerNames names) {
+        return list(all, refusals, List.of(), q, now, names);
+    }
+
+    /** @param operations opérations du panel seul (#881), affichées sous leur propre onglet */
+    public static String list(List<AgentActionRow> all, List<Refusal> refusals, List<PanelOperation> operations,
+                              Query q, Instant now, PlayerNames names) {
         if (q.refused()) {
-            return refusedList(refusals, q, now);
+            return refusedList(refusals, operations.size(), q, now);
+        }
+        if (q.panel()) {
+            return panelList(operations, refusals.size(), q, now);
         }
         List<AgentActionRow> filtered = new ArrayList<>();
         Set<ActionView.Domain> present = new LinkedHashSet<>();
@@ -160,7 +242,7 @@ public final class ActionsPages {
         sb.append(Ui.pageHeader("history", "Historique des actions",
                 "Toutes les actions envoyées aux agents RPGQuest : statut, cible, résultat.", ""));
 
-        sb.append(searchAndFilters(q, present, total, refusals.size()));
+        sb.append(searchAndFilters(q, present, total, refusals.size(), operations.size()));
 
         if (pageRows.isEmpty()) {
             sb.append(Ui.empty("history", total == 0
@@ -200,7 +282,7 @@ public final class ActionsPages {
     }
 
     /** Issue #169 : les refus avant envoi, distincts des actions exécutées (aucune fiche agent). */
-    private static String refusedList(List<Refusal> refusals, Query q, Instant now) {
+    private static String refusedList(List<Refusal> refusals, int operationCount, Query q, Instant now) {
         String needle = q.search() == null ? "" : q.search().toLowerCase(Locale.ROOT);
         List<Refusal> rows = refusals.stream().filter(r -> needle.isBlank() || (r.type() + " "
                 + ActionView.humanLabel(r.type()) + " " + r.target() + " " + r.reason() + " " + r.actor())
@@ -208,7 +290,7 @@ public final class ActionsPages {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("history", "Historique des actions",
                 "Toutes les actions envoyées aux agents RPGQuest : statut, cible, résultat.", ""));
-        sb.append(searchAndFilters(q, Set.of(), rows.size(), refusals.size()));
+        sb.append(searchAndFilters(q, Set.of(), rows.size(), refusals.size(), operationCount));
         sb.append(Ui.banner("info", "Demandes <strong>refusées par PlugAdmin avant tout envoi</strong> au serveur "
                 + "(confirmation manquante, valeur invalide, conflit…) : rien n'a été exécuté en jeu."));
         if (rows.isEmpty()) {
@@ -230,7 +312,45 @@ public final class ActionsPages {
         return sb.append("</tbody></table></div>").toString();
     }
 
-    private static String searchAndFilters(Query q, Set<ActionView.Domain> present, int total, int refusedCount) {
+    /** Issue #881 : les opérations du panel seul, refus compris, avec un lien vers le projet s'il existe. */
+    private static String panelList(List<PanelOperation> operations, int refusedCount, Query q, Instant now) {
+        String needle = q.search() == null ? "" : q.search().toLowerCase(Locale.ROOT);
+        List<PanelOperation> rows = operations.stream()
+                .filter(o -> needle.isBlank() || o.searchText().contains(needle)).limit(200).toList();
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.pageHeader("history", "Historique des actions",
+                "Toutes les actions envoyées aux agents RPGQuest : statut, cible, résultat.", ""));
+        sb.append(searchAndFilters(q, Set.of(), rows.size(), refusedCount, operations.size()));
+        sb.append(Ui.banner("info", "Opérations faites <strong>par PlugAdmin seul</strong> sur les projets de "
+                + "l'Atelier (création, corbeille, restauration, suppression définitive, refus) : rien n'est "
+                + "envoyé au serveur Minecraft."));
+        if (rows.isEmpty()) {
+            return sb.append(Ui.empty("history", "Aucune opération ne correspond à ces critères.")).toString();
+        }
+        sb.append("<div class=\"table-responsive\"><table class=\"table align-middle actions-table actions-panel\">")
+                .append("<thead><tr><th>Date</th><th>Opération</th><th>Projet</th><th>Résultat</th>"
+                        + "<th>Acteur</th></tr></thead><tbody>");
+        for (PanelOperation o : rows) {
+            String project = o.name().isEmpty() ? (o.buildingId().isEmpty() ? "" : Ui.id(o.buildingId()))
+                    : Http.esc(o.name()) + (o.buildingId().isEmpty() ? "" : " " + Ui.id(o.buildingId()));
+            sb.append("<tr><td class=\"nowrap\"><span title=\"").append(Http.esc(o.at().toString())).append("\">")
+                    .append(Http.esc(ActionView.relativeTime(o.at(), now))).append("</span></td><td>")
+                    .append(Http.esc(o.label())).append(" ").append(Ui.id(o.action())).append("</td><td>")
+                    .append(project.isEmpty() ? "<span class=\"muted\">—</span>" : project);
+            if (!o.link().isEmpty()) {
+                sb.append(" <a class=\"small\" href=\"").append(Http.esc(o.link())).append("\">Ouvrir</a>");
+            } else if (!o.projectId().isEmpty()) {
+                sb.append(" <span class=\"muted small\">(n'existe plus)</span>");
+            }
+            sb.append("</td><td>").append(o.ok() ? Ui.pill("fait", "delivered", "✓") : Ui.pill("refusé", "warn", ""))
+                    .append(o.ok() || o.reason().isEmpty() ? "" : " " + Http.esc(o.reason()))
+                    .append("</td><td class=\"muted nowrap\">").append(Http.esc(o.actor())).append("</td></tr>");
+        }
+        return sb.append("</tbody></table></div>").toString();
+    }
+
+    private static String searchAndFilters(Query q, Set<ActionView.Domain> present, int total, int refusedCount,
+                                           int operationCount) {
         StringBuilder sb = new StringBuilder();
 
         // Recherche (GET) — conserve les filtres actifs
@@ -257,11 +377,15 @@ public final class ActionsPages {
         sb.append("<li class=\"nav-item\"><a class=\"nav-link").append(on ? " active" : "").append("\"")
                 .append(on ? " aria-current=\"page\"" : "").append(" href=\"").append(q.href("status", REFUSED_SLUG))
                 .append("\">Refusées avant envoi (").append(refusedCount).append(")</a></li>");
+        boolean ops = q.panel();
+        sb.append("<li class=\"nav-item\"><a class=\"nav-link").append(ops ? " active" : "").append("\"")
+                .append(ops ? " aria-current=\"page\"" : "").append(" href=\"").append(q.href("status", PANEL_SLUG))
+                .append("\">Opérations du panel (").append(operationCount).append(")</a></li>");
         sb.append("</ul>");
 
         // Domaine — puces (seulement ceux réellement présents, + « Tous »), sauf pour les refus.
 
-        if (!q.refused()) {
+        if (!q.refused() && !q.panel()) {
             sb.append("<div class=\"actions-domains\">");
             sb.append(domainChip(q, null, "Tous", "filter"));
             for (ActionView.Domain d : ActionView.Domain.values()) {
@@ -271,13 +395,14 @@ public final class ActionsPages {
             }
             sb.append("</div>");
         }
-        sb.append("<p class=\"count-note\">").append(total).append(q.refused() ? (total > 1 ? " refus" : " refus")
+        sb.append("<p class=\"count-note\">").append(total).append(q.panel() ? (total > 1 ? " opérations" : " opération")
+                : q.refused() ? " refus"
                 : total > 1 ? " actions" : " action").append("</p>");
         return sb.toString();
     }
 
     private static String statusPill(Query q, ActionView.Group g, String label) {
-        boolean on = !q.refused() && q.group() == g;
+        boolean on = !q.refused() && !q.panel() && q.group() == g;
         return "<li class=\"nav-item\"><a class=\"nav-link" + (on ? " active" : "")
                 + "\"" + (on ? " aria-current=\"page\"" : "") + " href=\""
                 + q.href("status", g == null ? "all" : g.slug()) + "\">" + Http.esc(label) + "</a></li>";

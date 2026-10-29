@@ -17,7 +17,6 @@ import com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench.CheckState;
 import com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench.Status;
 import com.lodygames.rpgquest.panel.building.BuildingProject;
 import com.lodygames.rpgquest.panel.building.ProjectUsage;
-import com.lodygames.rpgquest.panel.building.WorkshopProjectDeletion;
 import com.lodygames.rpgquest.panel.building.BuildingSiteView;
 import com.lodygames.rpgquest.panel.building.CatalogState;
 import com.lodygames.rpgquest.panel.building.BuildingVoxels;
@@ -85,14 +84,17 @@ public final class WorkshopPages {
     public record ProjectRow(BuildingProject project, String state, int drafts, ProjectUsage usage) {
     }
 
+    /** @param trashed projets dans la corbeille (#881) : un lien, jamais mêlés à la liste */
     public static String index(Session session, List<ProjectRow> projects, WorkshopProjectQuery query,
-                               List<Importable> importable, String notice, String error) {
+                               List<Importable> importable, int trashed, String notice, String error) {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("box", "Atelier de création",
                 "Décrivez un bâtiment en français : l'IA en propose un plan, vous le vérifiez, puis vous "
                         + "l'enregistrez dans la bibliothèque. Aucun emplacement n'est nécessaire pour "
                         + "créer : on choisit où le poser plus tard.",
-                Ui.primaryLink(BASE + "/new", "plus", "Nouveau projet")));
+                "<a class=\"btn secondary\" href=\"" + WorkshopTrashPages.URL + "\">" + Icons.icon("trash")
+                        + "Corbeille (" + trashed + ")</a> "
+                        + Ui.primaryLink(BASE + "/new", "plus", "Nouveau projet")));
         banners(sb, notice, error);
 
         if (projects.isEmpty()) {
@@ -212,65 +214,6 @@ public final class WorkshopPages {
 
     private static String usedWhereUrl(ProjectUsage u) {
         return u.sites().isEmpty() && !u.portals().isEmpty() ? "/portals" : "/buildings/sites";
-    }
-
-    // ================================================================================
-    //  Supprimer le projet (#881)
-    // ================================================================================
-
-    /**
-     * La zone « Supprimer le projet » de la fiche : l'usage, ce qui serait effacé et conservé, et le
-     * formulaire seulement si la suppression est permise. Le serveur revérifie tout à la soumission.
-     */
-    public static String deletionCard(Session session, BuildingProject p, ProjectUsage usage,
-                                      WorkshopProjectDeletion.Preview preview, boolean canWrite) {
-        StringBuilder sb = new StringBuilder("<details class=\"npc-registry ws-delete\" id=\"supprimer\">");
-        sb.append("<summary>").append(Icons.icon("trash")).append("Supprimer le projet — ")
-                .append(Http.esc(usage.usage().label())).append("</summary>");
-        sb.append("<p>").append(usagePill(usage)).append(" ").append(Ui.badge(usage.catalog().label())).append("</p>");
-        if (!usage.sites().isEmpty() || !usage.portals().isEmpty()) {
-            sb.append("<p>Utilisé par : ");
-            List<String> where = new java.util.ArrayList<>();
-            usage.sites().forEach(s -> where.add("emplacement " + Ui.id(s)));
-            usage.portals().forEach(s -> where.add("portail " + Ui.id(s)));
-            sb.append(String.join(", ", where)).append(" — <a href=\"").append(usedWhereUrl(usage)).append("\">")
-                    .append("Voir où utilisé</a></p>");
-        }
-        List<String> blockers = usage.blockers();
-        sb.append("<p><strong>").append(blockers.isEmpty() ? "Serait supprimé définitivement"
-                        : "Si la suppression était permise, serait supprimé")
-                .append("</strong> (panel uniquement) : la fiche du projet, ")
-                .append(preview.versions()).append(" version(s) de plan et ").append(preview.revisions())
-                .append(" révision(s), ").append(preview.designs()).append(" conception(s) détaillée(s), ")
-                .append(preview.runs()).append(" conception(s) automatique(s), ").append(preview.images())
-                .append(" image(s) de référence").append(preview.images() > 0 ? " (" + kib(preview.imageBytes()) + ")" : "")
-                .append(".</p>");
-        sb.append("<p><strong>Conservé</strong> : le bâtiment de la bibliothèque et ses versions archivées, les "
-                + "bâtiments posés, les emplacements et leurs sauvegardes de terrain, les portails, l'historique "
-                + "des actions de l'agent (un plan y reste importable), le journal IA et le journal d'audit. "
-                + "Aucun bloc du monde n'est touché.</p>");
-        if (!blockers.isEmpty()) {
-            sb.append(Ui.banner("warning", "<strong>Suppression impossible pour l'instant.</strong><ul class=\"tight\">"
-                    + blockers.stream().map(b -> "<li>" + Http.esc(b) + "</li>").reduce("", String::concat)
-                    + "</ul>" + (usage.catalog().inLibrary()
-                            ? "<a href=\"/buildings/library\">Ouvrir la Bibliothèque</a>" : "")));
-        } else if (!canWrite) {
-            sb.append("<p class=\"muted\">Votre rôle ne permet pas de supprimer un projet.</p>");
-        } else {
-            sb.append("<form method=\"post\" action=\"").append(BASE).append("/project\" class=\"actform\">")
-                    .append(hidden("_csrf", session.csrfToken())).append(hidden("_action", "project_delete"))
-                    .append(hidden("id", p.id())).append(hidden("project_version", String.valueOf(p.version())))
-                    .append("<label class=\"form-check\"><input class=\"form-check-input\" type=\"checkbox\" "
-                            + "name=\"confirm\" value=\"yes\" required> Je supprime définitivement le projet « ")
-                    .append(Http.esc(p.name())).append(" » et ses versions de plan. Cette action est "
-                            + "irréversible.</label><div class=\"btnrow\"><button class=\"btn sm danger\" "
-                            + "type=\"submit\">").append(Icons.icon("trash")).append("Supprimer le projet</button></div></form>");
-        }
-        return sb.append("</details>").toString();
-    }
-
-    private static String kib(long bytes) {
-        return bytes < 1024 ? bytes + " o" : (bytes / 1024) + " Kio";
     }
 
     // ================================================================================

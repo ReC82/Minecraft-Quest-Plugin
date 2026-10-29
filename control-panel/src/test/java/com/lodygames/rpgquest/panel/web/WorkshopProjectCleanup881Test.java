@@ -114,10 +114,10 @@ class WorkshopProjectCleanup881Test {
         assertTrue(moulin.contains("Jamais enregistré"), "statut Bibliothèque visible : " + moulin);
     }
 
-    // ---- Suppression autorisée ------------------------------------------------------------------
+    // ---- Corbeille, restauration, suppression définitive -------------------------------------------
 
     @Test
-    void anUnusedDraftProjectIsDeletedWithEverythingItOwnsAndASecondClickIsHarmless() throws Exception {
+    void anUnusedProjectGoesToTheTrashIntactIsRestoredThenDeletedOnlyWithAStrongConfirmation() throws Exception {
         start();
         sites("");
         String project = createProject("Essai jetable", "Un essai.", "essai_jetable");
@@ -130,21 +130,52 @@ class WorkshopProjectCleanup881Test {
                 "", "owner", 0);
         int actionsBefore = store.recentActions(TestConfig.AGENT_ID, 500).size();
 
+        // 1. Fiche : « Mettre à la corbeille » — rien n'est effacé.
         String page = get(project).body();
         String zone = section(page, "id=\"supprimer\"");
-        assertTrue(zone.contains("Non utilisé") && zone.contains("1 version(s) de plan")
-                && zone.contains("1 conception(s) détaillée(s)") && zone.contains("1 image(s)"), zone);
-        assertTrue(zone.contains("Conservé") && zone.contains("Aucun bloc du monde n&#39;est touché")
-                || zone.contains("Aucun bloc du monde n'est touché"), zone);
+        assertTrue(zone.contains("Mettre à la corbeille") && zone.contains("Non utilisé")
+                && zone.contains("est effacé</strong>"), zone);
+        assertFalse(zone.contains("value=\"project_delete\""), "pas de suppression définitive depuis la fiche");
+        String trashed = decoded(location(post("/buildings/workshop/project", "_csrf=" + csrf(page)
+                + "&_action=project_trash&id=" + pid + "&project_version=" + version(zone))));
+        assertTrue(trashed.contains("mis à la corbeille") && trashed.contains("restauré"), trashed);
+        assertTrue(projects().find(pid).orElseThrow().archived());
+        assertEquals(1, drafts().forProject(TestConfig.AGENT_ID, pid).size(), "versions conservées");
+        assertEquals(1, new ReferenceImageStore(dbPath).list(pid).size(), "images conservées");
+        String list = get("/buildings/workshop").body();
+        assertFalse(list.contains("Essai jetable"), "hors de la liste principale");
+        assertTrue(list.contains("Corbeille (1)") && list.contains("1 projet(s)"), excerpt(list));
+        assertTrue(location(get(project)).startsWith("/buildings/workshop/trash"), "la fiche renvoie à la corbeille");
+        String again = decoded(location(post("/buildings/workshop/project", "_csrf=" + csrf(page)
+                + "&_action=project_trash&id=" + pid + "&project_version=" + version(zone))));
+        assertTrue(again.contains("rien de plus n'a été fait"), "double clic sans erreur : " + again);
 
-        String form = "_csrf=" + csrf(page) + "&_action=project_delete&id=" + pid + "&project_version="
-                + field(zone, "name=\"project_version\" value=\"([^\"]+)\"");
-        String refused = decoded(location(post("/buildings/workshop/project", form)));
-        assertTrue(refused.contains("Cochez la confirmation"), refused);
-        assertTrue(projects().find(pid).isPresent(), "rien sans la case");
+        // 2. Corbeille : restaurer, tel quel.
+        String bin = get("/buildings/workshop/trash").body();
+        String item = trashItem(bin, pid);
+        assertTrue(item.contains("Essai jetable") && item.contains("1 version(s) de plan")
+                && item.contains("1 conception(s) détaillée(s)") && item.contains("1 image(s)"), item);
+        String restored = decoded(location(post("/buildings/workshop/trash", "_csrf=" + csrf(bin)
+                + "&_action=project_restore&id=" + pid + "&project_version=" + version(item))));
+        assertTrue(restored.contains("restauré dans l'Atelier"), restored);
+        assertFalse(projects().find(pid).orElseThrow().archived());
+        assertTrue(get("/buildings/workshop").body().contains("Essai jetable"));
+        assertEquals(1, drafts().forProject(TestConfig.AGENT_ID, pid).size());
 
-        String done = decoded(location(post("/buildings/workshop/project", form + "&confirm=yes")));
-        assertTrue(done.contains("supprimé avec ses versions de plan"), done);
+        // 3. De nouveau à la corbeille, puis suppression définitive : identifiant recopié exigé.
+        page = get(project).body();
+        post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action=project_trash&id=" + pid
+                + "&project_version=" + version(section(page, "id=\"supprimer\"")));
+        bin = get("/buildings/workshop/trash").body();
+        item = trashItem(bin, pid);
+        String form = "_csrf=" + csrf(bin) + "&_action=project_delete&id=" + pid + "&project_version=" + version(item)
+                + "&confirm=yes";
+        String refused = decoded(location(post("/buildings/workshop/trash", form + "&confirm_id=autre_chose")));
+        assertTrue(refused.contains("Recopiez l'identifiant") && refused.contains("rien n'a été supprimé"), refused);
+        assertTrue(projects().find(pid).isPresent(), "rien sans l'identifiant");
+
+        String done = decoded(location(post("/buildings/workshop/trash", form + "&confirm_id=essai_jetable")));
+        assertTrue(done.contains("supprimé définitivement"), done);
         assertTrue(projects().find(pid).isEmpty());
         assertTrue(drafts().forProject(TestConfig.AGENT_ID, pid).isEmpty());
         assertTrue(new ReferenceImageStore(dbPath).list(pid).isEmpty());
@@ -152,26 +183,72 @@ class WorkshopProjectCleanup881Test {
         assertEquals(1, drafts().forProject(TestConfig.AGENT_ID, id(other)).size(), "l'autre projet est intact");
         assertEquals(actionsBefore, store.recentActions(TestConfig.AGENT_ID, 500).size(),
                 "aucune action envoyée au serveur, historique conservé");
+        String twice = decoded(location(post("/buildings/workshop/trash", form + "&confirm_id=essai_jetable")));
+        assertTrue(twice.contains("déjà été supprimé"), "double clic sans erreur : " + twice);
+        assertTrue(get("/buildings/workshop/trash").body().contains("La corbeille est vide"));
 
-        String again = decoded(location(post("/buildings/workshop/project", form + "&confirm=yes")));
-        assertTrue(again.contains("déjà été supprimé"), "double clic sans erreur : " + again);
-        assertFalse(get("/buildings/workshop").body().contains("Essai jetable"));
+        // 4. Historique visible : chaque geste, refus compris, avec qui et quoi.
+        String history = get("/actions?status=panel&domain=all").body();
+        assertTrue(history.contains("Opérations du panel (") && history.contains("Mis à la corbeille")
+                && history.contains("Restauré depuis la corbeille") && history.contains("Supprimé définitivement")
+                && history.contains("Essai jetable") && history.contains("existe plus)"), excerpt(history));
+        assertTrue(history.contains("Recopiez l") && history.contains(TestConfig.OWNER_USERNAME), "le refus et l'acteur");
+        assertTrue(history.contains("Autre projet") && history.contains("Ouvrir"), "lien vers un projet existant");
+        assertTrue(get("/actions?status=panel&domain=all&q=corbeille").body().contains("Mis à la corbeille"));
     }
 
     @Test
-    void aProjectEditedMeanwhileIsNotDeleted() throws Exception {
+    void aProjectEditedMeanwhileIsNotTrashed() throws Exception {
         start();
         sites("");
         String project = createProject("Essai", "Un essai.", "essai_concurrent");
         String page = get(project).body();
-        String version = field(section(page, "id=\"supprimer\""), "name=\"project_version\" value=\"([^\"]+)\"");
+        String version = version(section(page, "id=\"supprimer\""));
         var p = projects().find(id(project)).orElseThrow();
         projects().update(p.id(), p.version(), new BuildingProjectStore.Fields("Essai renommé", p.brief(),
                 p.buildingId(), p.front(), p.maxWidth(), p.maxDepth(), p.maxHeight()), "autre");
         String res = decoded(location(post("/buildings/workshop/project", "_csrf=" + csrf(page)
-                + "&_action=project_delete&id=" + id(project) + "&project_version=" + version + "&confirm=yes")));
+                + "&_action=project_trash&id=" + id(project) + "&project_version=" + version)));
         assertTrue(res.contains("modifié entre-temps"), res);
-        assertTrue(projects().find(id(project)).isPresent());
+        assertFalse(projects().find(id(project)).orElseThrow().archived());
+    }
+
+    @Test
+    void aProjectOutsideTheTrashIsNeverDeletedDefinitively() throws Exception {
+        start();
+        sites("");
+        String project = createProject("Essai", "Un essai.", "essai_actif");
+        var p = projects().find(id(project)).orElseThrow();
+        String page = get(project).body();
+        String fromFiche = decoded(location(post("/buildings/workshop/project", "_csrf=" + csrf(page)
+                + "&_action=project_delete&id=" + p.id() + "&project_version=" + p.version() + "&confirm=yes")));
+        assertTrue(fromFiche.contains("Mettez d'abord le projet à la corbeille"), fromFiche);
+        String fromTrash = decoded(location(post("/buildings/workshop/trash", "_csrf=" + csrf(page)
+                + "&_action=project_delete&id=" + p.id() + "&project_version=" + p.version()
+                + "&confirm=yes&confirm_id=essai_actif")));
+        assertTrue(fromTrash.contains("déjà dans la liste"), fromTrash);
+        assertTrue(projects().find(p.id()).isPresent());
+    }
+
+    @Test
+    void aTrashedProjectThatBecameUsedCannotBeDeletedDefinitively() throws Exception {
+        start();
+        sites("");
+        String project = createProject("Église du Hub", "Une église.", "eglise_hub");
+        var p = projects().find(id(project)).orElseThrow();
+        assertEquals(BuildingProjectStore.TrashOutcome.DONE, projects().trash(p.id(), p.version(), "owner"));
+        sites(placement("eglise_hub"));
+        String bin = get("/buildings/workshop/trash").body();
+        String item = trashItem(bin, p.id());
+        assertTrue(item.contains("Suppression définitive impossible") && !item.contains("value=\"project_delete\""),
+                item);
+        var trashed = projects().find(p.id()).orElseThrow();
+        String res = decoded(location(post("/buildings/workshop/trash", "_csrf=" + csrf(bin)
+                + "&_action=project_delete&id=" + p.id() + "&project_version=" + trashed.version()
+                + "&confirm=yes&confirm_id=eglise_hub")));
+        assertTrue(res.contains("rien n'a été supprimé") && res.contains("posé sur 1 emplacement"), res);
+        assertTrue(projects().find(p.id()).isPresent());
+        assertTrue(get("/actions?status=panel&domain=all").body().contains("refusé"));
     }
 
     // ---- Suppression refusée côté serveur --------------------------------------------------------
@@ -186,8 +263,8 @@ class WorkshopProjectCleanup881Test {
         String page = get(project).body();
         String zone = section(page, "id=\"supprimer\"");
         assertTrue(zone.contains("Utilisé en jeu") && zone.contains("buildsite_0009")
-                && zone.contains("Suppression impossible"), zone);
-        assertFalse(zone.contains("value=\"project_delete\""), "pas de bouton, pas d'option forcer");
+                && zone.contains("Mise à la corbeille impossible"), zone);
+        assertFalse(zone.contains("value=\"project_trash\""), "pas de bouton, pas d'option forcer");
         assertForgedDeleteRefused(page, project, "posé sur 1 emplacement");
     }
 
@@ -259,10 +336,10 @@ class WorkshopProjectCleanup881Test {
     private void assertForgedDeleteRefused(String page, String project, String reason) throws Exception {
         var p = projects().find(id(project)).orElseThrow();
         String res = decoded(location(post("/buildings/workshop/project", "_csrf=" + csrf(page)
-                + "&_action=project_delete&id=" + p.id() + "&project_version=" + p.version() + "&confirm=yes")));
-        assertTrue(res.contains("Rien n'a été supprimé") || res.contains("rien n'a été supprimé"), res);
+                + "&_action=project_trash&id=" + p.id() + "&project_version=" + p.version())));
+        assertTrue(res.contains("rien n'a changé"), res);
         assertTrue(res.contains(reason), res);
-        assertTrue(projects().find(p.id()).isPresent(), "le projet est toujours là");
+        assertFalse(projects().find(p.id()).orElseThrow().archived(), "le projet est toujours dans la liste");
     }
 
     // ---- Outils ---------------------------------------------------------------------------------
@@ -341,6 +418,17 @@ class WorkshopProjectCleanup881Test {
         int at = page.indexOf(marker);
         assertTrue(at > 0, "section introuvable : " + marker + " — " + excerpt(page));
         return page.substring(at, page.indexOf("</details>", at));
+    }
+
+    private static String version(String html) {
+        return field(html, "name=\"project_version\" value=\"([^\"]+)\"");
+    }
+
+    private static String trashItem(String page, String projectId) {
+        int at = page.indexOf("id=\"projet-" + projectId + "\"");
+        assertTrue(at > 0, "absent de la corbeille : " + projectId + " — " + excerpt(page));
+        int next = page.indexOf("class=\"card ws-trash\"", at + 1);
+        return page.substring(at, next < 0 ? page.length() : next);
     }
 
     private static String id(String location) {

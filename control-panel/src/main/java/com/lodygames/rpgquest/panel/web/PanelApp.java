@@ -459,6 +459,7 @@ public final class PanelApp {
         route(WorkshopPages.BASE + "/new", this::handleWorkshopNew);
         route(WorkshopPages.BASE + "/import", this::handleWorkshopImport);
         route(WorkshopPages.BASE + "/project", this::handleWorkshopProject);
+        route(WorkshopTrashPages.URL, this::handleWorkshopTrash);
         route(WorkshopPages.BASE + "/image", this::handleWorkshopImage);
         route(WorkshopPages.BASE + "/journal", this::handleWorkshopJournal);
         route("/content/schema.json", this::handleContentSchema);
@@ -1144,7 +1145,7 @@ public final class PanelApp {
         }
         Http.html(exchange, 200, renderPage("Atelier de création", session, WorkshopPages.BASE,
                 WorkshopPages.index(session, rows, WorkshopProjectQuery.from(q), importable(agentId),
-                        q.get("ok"), q.get("err")),
+                        planProjects.trashed(agentId).size(), q.get("ok"), q.get("err")),
                 Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }
 
@@ -1180,50 +1181,163 @@ public final class PanelApp {
     }
 
     /**
-     * {@code project_delete} (#881) : suppression définitive d'un projet NON utilisé. Tout est revérifié
-     * ici — usage, bibliothèque, geste en cours, case, version vue — l'écran n'est qu'un reflet.
+     * {@code project_trash} (#881) : met un projet NON utilisé à la corbeille, sans rien effacer. Tout
+     * est revérifié ici — droits, usage, bibliothèque, geste en cours, version vue —, l'écran n'est
+     * qu'un reflet. Chaque issue, refus compris, est journalisée.
      */
-    private PlanOutcome projectDelete(Session session, String agentId,
-                                      com.lodygames.rpgquest.panel.building.BuildingProject project, Map<String, String> f) {
+    private PlanOutcome projectTrash(Session session, String agentId,
+                                     com.lodygames.rpgquest.panel.building.BuildingProject project, Map<String, String> f) {
         String rid = UUID.randomUUID().toString().substring(0, 8);
-        String target = "project=" + project.id() + " building=" + project.buildingId();
-        if (!permissions.can(session.effective(), Permission.BUILDING_WRITE)) {
-            audit.record(session.username(), "building.project.delete", target, "DENIED", "permission", rid);
+        String target = projectAuditTarget(project);
+        Optional<String> refusal = projectRemovalRefusal(session, agentId, project);
+        if (refusal.isPresent()) {
+            audit.record(session.username(), "building.project.trash", target, "DENIED", refusal.get(), rid);
             return PlanOutcome.redirect(projectLocation(project.id(), "", null,
-                    "Votre rôle ne permet pas de supprimer un projet. Rien n'a été supprimé."));
+                    "Mise à la corbeille refusée, rien n'a changé : " + refusal.get()));
         }
-        if (!"yes".equals(f.get("confirm"))) {
-            return PlanOutcome.redirect(projectLocation(project.id(), "", null,
-                    "Cochez la confirmation pour supprimer le projet. Rien n'a été supprimé."));
+        var outcome = planProjects.trash(project.id(), parseIntOr(f.get("project_version"), -1), session.username());
+        audit.record(session.username(), "building.project.trash", target,
+                outcome == com.lodygames.rpgquest.panel.building.BuildingProjectStore.TrashOutcome.DONE ? "OK" : "DENIED", outcome.name(), rid);
+        return switch (outcome) {
+            case DONE -> PlanOutcome.redirect(WorkshopPages.BASE + "?ok=" + enc("Projet « " + project.name()
+                    + " » mis à la corbeille. Rien n'a été effacé : il peut être restauré depuis la corbeille."));
+            case STALE -> PlanOutcome.redirect(projectLocation(project.id(), "", null, "Le projet a été modifié "
+                    + "entre-temps : relisez-le avant de le retirer. Rien n'a changé."));
+            case NOT_FOUND -> PlanOutcome.redirect(WorkshopTrashPages.URL + "?ok="
+                    + enc("Ce projet est déjà dans la corbeille : rien de plus n'a été fait."));
+        };
+    }
+
+    /**
+     * Ce qui interdit de retirer un projet (corbeille ou suppression définitive), ou vide : droits,
+     * usage en jeu (posé, portail, bibliothèque, relevé manquant) et geste en cours (#881).
+     */
+    private Optional<String> projectRemovalRefusal(Session session, String agentId,
+                                                   com.lodygames.rpgquest.panel.building.BuildingProject project) {
+        if (!permissions.can(session.effective(), Permission.BUILDING_WRITE)) {
+            return Optional.of("Votre rôle ne permet pas de retirer ni de supprimer un projet.");
         }
         List<BuildingPlanDraft> drafts = planDrafts.forProject(agentId, project.id());
         var usage = projectUsage(agentId, project, drafts, agentPages.buildingSiteDirectory(agentId));
-        if (!usage.deletable()) {
-            audit.record(session.username(), "building.project.delete", target, "DENIED",
-                    String.join(" | ", usage.blockers()), rid);
-            return PlanOutcome.redirect(projectLocation(project.id(), "", null,
-                    "Suppression refusée, rien n'a été supprimé : " + String.join(" ", usage.blockers())));
+        return usage.deletable() ? Optional.empty() : Optional.of(String.join(" ", usage.blockers()));
+    }
+
+    /** La cible d'une entrée d'audit d'un projet : identifiant, bâtiment et nom (lisible dans l'Historique). */
+    private static String projectAuditTarget(com.lodygames.rpgquest.panel.building.BuildingProject project) {
+        return "project=" + project.id() + " building=" + project.buildingId() + " name=" + project.name();
+    }
+
+    /**
+     * La corbeille de l'Atelier (#881) : {@code GET} la liste ; {@code POST project_restore} ramène un
+     * projet dans la liste, {@code POST project_delete} l'efface définitivement après confirmation
+     * forte. Rien n'est envoyé au serveur Minecraft.
+     */
+    private void handleWorkshopTrash(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
         }
-        int expected;
-        try {
-            expected = Integer.parseInt(f.getOrDefault("project_version", "").trim());
-        } catch (NumberFormatException e) {
-            expected = -1;
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.AI_USE)) {
+            forbidden(exchange, session, WorkshopPages.BASE);
+            return;
+        }
+        String agentId = config.agents().defaultAgentId();
+        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Optional<Map<String, String>> body = Http.formBody(exchange, 64 * 1024);
+            if (body.isEmpty()) {
+                Http.redirect(exchange, WorkshopTrashPages.URL + "?err=" + enc("Requête trop volumineuse."));
+                return;
+            }
+            Map<String, String> f = body.get();
+            if (!constantTimeEquals(session.csrfToken(), f.get("_csrf"))) {
+                Http.html(exchange, 403, Layout.bare("CSRF",
+                        "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+                return;
+            }
+            Http.redirect(exchange, trashGesture(session, agentId, f));
+            return;
+        }
+        Map<String, String> q = Http.query(exchange);
+        var sites = agentPages.buildingSiteDirectory(agentId);
+        List<WorkshopTrashPages.TrashRow> rows = new ArrayList<>();
+        for (var p : planProjects.trashed(agentId)) {
+            List<BuildingPlanDraft> drafts = planDrafts.forProject(agentId, p.id());
+            rows.add(new WorkshopTrashPages.TrashRow(p, drafts.size(), projectUsage(agentId, p, drafts, sites),
+                    WorkshopTrashPages.Origin.of(p, sites), workshopDeletion.preview(p.id())));
+        }
+        Http.html(exchange, 200, renderPage("Corbeille de l'Atelier", session, WorkshopPages.BASE,
+                WorkshopTrashPages.page(session, rows, permissions.can(session.effective(), Permission.BUILDING_WRITE),
+                        q.get("ok"), q.get("err")),
+                Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    /** Restaurer ou supprimer définitivement un projet de la corbeille ; renvoie où rediriger. */
+    private String trashGesture(Session session, String agentId, Map<String, String> f) {
+        String gesture = f.getOrDefault("_action", "").trim();
+        String action = "project_restore".equals(gesture) ? "building.project.restore"
+                : "project_delete".equals(gesture) ? "building.project.delete" : "";
+        if (action.isEmpty()) {
+            return WorkshopTrashPages.URL + "?err=" + enc("Geste inconnu : rien n'a été fait.");
+        }
+        var found = planProjects.find(f.get("id")).filter(p -> p.agentId().equals(agentId));
+        if (found.isEmpty()) {
+            return WorkshopTrashPages.URL + "?ok=" + enc("building.project.restore".equals(action)
+                    ? "Ce projet n'existe plus : rien n'a été restauré."
+                    : "Ce projet a déjà été supprimé définitivement : rien de plus n'a été fait.");
+        }
+        var project = found.get();
+        if (!project.archived()) {
+            return WorkshopPages.BASE + "/project?id=" + enc(project.id()) + "&ok=" + enc("Ce projet est déjà "
+                    + "dans la liste de l'Atelier : rien n'a été fait.");
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String target = projectAuditTarget(project);
+        int expected = parseIntOr(f.get("project_version"), -1);
+        if ("building.project.restore".equals(action)) {
+            if (!permissions.can(session.effective(), Permission.BUILDING_WRITE)) {
+                audit.record(session.username(), action, target, "DENIED", "permission", rid);
+                return WorkshopTrashPages.URL + "?err=" + enc("Votre rôle ne permet pas de restaurer un projet.");
+            }
+            var outcome = planProjects.restore(project.id(), expected, session.username());
+            audit.record(session.username(), action, target,
+                    outcome == com.lodygames.rpgquest.panel.building.BuildingProjectStore.TrashOutcome.DONE ? "OK" : "DENIED", outcome.name(), rid);
+            return switch (outcome) {
+                case DONE -> WorkshopPages.BASE + "/project?id=" + enc(project.id()) + "&ok=" + enc("Projet « "
+                        + project.name() + " » restauré dans l'Atelier, avec ses versions de plan.");
+                case STALE -> WorkshopTrashPages.URL + "?err=" + enc("Le projet a changé entre-temps : rechargez "
+                        + "la corbeille. Rien n'a été restauré.");
+                case NOT_FOUND -> WorkshopTrashPages.URL + "?ok=" + enc("Ce projet n'est plus dans la corbeille : "
+                        + "rien de plus n'a été fait.");
+            };
+        }
+        Optional<String> refusal = projectRemovalRefusal(session, agentId, project);
+        if (refusal.isEmpty() && (!"yes".equals(f.get("confirm"))
+                || !project.buildingId().equals(f.getOrDefault("confirm_id", "").trim()))) {
+            refusal = Optional.of("Recopiez l'identifiant « " + project.buildingId() + " » et cochez la "
+                    + "confirmation.");
+        }
+        if (refusal.isPresent()) {
+            audit.record(session.username(), action, target, "DENIED", refusal.get(), rid);
+            return WorkshopTrashPages.URL + "?err=" + enc("Suppression définitive refusée, rien n'a été supprimé : "
+                    + refusal.get());
         }
         var outcome = workshopDeletion.delete(project.id(), expected);
-        audit.record(session.username(), "building.project.delete", target,
+        audit.record(session.username(), action, target,
                 outcome == com.lodygames.rpgquest.panel.building.WorkshopProjectDeletion.Outcome.DELETED ? "OK" : "DENIED",
                 outcome.name(), rid);
         return switch (outcome) {
-            case DELETED -> PlanOutcome.redirect(WorkshopPages.BASE + "?ok=" + enc("Projet « " + project.name()
-                    + " » supprimé avec ses versions de plan. Bibliothèque, bâtiments posés et emplacements : "
-                    + "inchangés."));
-            case STALE -> PlanOutcome.redirect(projectLocation(project.id(), "", null, "Le projet a été modifié "
-                    + "entre-temps : relisez-le avant de le supprimer. Rien n'a été supprimé."));
-            case BUSY -> PlanOutcome.redirect(projectLocation(project.id(), "", null, "Une conception automatique "
-                    + "vient de démarrer : attendez sa fin. Rien n'a été supprimé."));
-            case NOT_FOUND -> PlanOutcome.redirect(WorkshopPages.BASE + "?ok="
-                    + enc("Ce projet a déjà été supprimé : rien de plus n'a été fait."));
+            case DELETED -> WorkshopTrashPages.URL + "?ok=" + enc("Projet « " + project.name() + " » supprimé "
+                    + "définitivement avec ses versions de plan. Bibliothèque, bâtiments posés et emplacements : "
+                    + "inchangés.");
+            case STALE -> WorkshopTrashPages.URL + "?err=" + enc("Le projet a changé entre-temps : rechargez la "
+                    + "corbeille. Rien n'a été supprimé.");
+            case BUSY -> WorkshopTrashPages.URL + "?err=" + enc("Une conception automatique vient de démarrer : "
+                    + "attendez sa fin. Rien n'a été supprimé.");
+            case NOT_IN_TRASH -> WorkshopPages.BASE + "?err=" + enc("Ce projet a été restauré entre-temps : "
+                    + "rien n'a été supprimé.");
+            case NOT_FOUND -> WorkshopTrashPages.URL + "?ok=" + enc("Ce projet a déjà été supprimé "
+                    + "définitivement : rien de plus n'a été fait.");
         };
     }
 
@@ -1455,10 +1569,10 @@ public final class PanelApp {
                 return;
             }
             var project = planProjects.find(f.get("id")).filter(p -> !p.archived() && p.agentId().equals(agentId));
-            if (project.isEmpty() && "project_delete".equals(f.getOrDefault("_action", "").trim())) {
-                // #881 : le second clic d'une suppression déjà faite n'est pas une erreur.
-                Http.redirect(exchange, WorkshopPages.BASE + "?ok="
-                        + enc("Ce projet a déjà été supprimé : rien de plus n'a été fait."));
+            if (project.isEmpty() && "project_trash".equals(f.getOrDefault("_action", "").trim())) {
+                // #881 : le second clic d'une mise à la corbeille déjà faite n'est pas une erreur.
+                Http.redirect(exchange, WorkshopTrashPages.URL + "?ok="
+                        + enc("Ce projet n'est plus dans la liste : rien de plus n'a été fait."));
                 return;
             }
             if (project.isEmpty()) {
@@ -1489,7 +1603,11 @@ public final class PanelApp {
                 case "design_write" -> designWrite(session, agentId, project.get(), f);
                 case "design_save" -> designSave(session, project.get(), f);
                 case "archive" -> planArchive(session, project.get(), f);
-                case "project_delete" -> projectDelete(session, agentId, project.get(), f);
+                case "project_trash" -> projectTrash(session, agentId, project.get(), f);
+                // #881 : jamais depuis la fiche — la suppression définitive passe par la corbeille.
+                case "project_delete" -> PlanOutcome.redirect(projectLocation(project.get().id(), "", null,
+                        "Mettez d'abord le projet à la corbeille ; la suppression définitive se fait depuis la "
+                                + "corbeille. Rien n'a été supprimé."));
                 default -> PlanOutcome.redirect(projectLocation(project.get().id(), f.get("draft"), null,
                         "Geste inconnu : rien n'a été fait."));
             };
@@ -1541,6 +1659,12 @@ public final class PanelApp {
                                        int isoView, int isoCut, String designText)
             throws IOException {
         var project = planProjects.find(projectId).filter(p -> !p.archived() && p.agentId().equals(agentId));
+        if (project.isEmpty() && planProjects.find(projectId).filter(p -> p.agentId().equals(agentId)).isPresent()) {
+            // #881 : un projet de la corbeille ne s'ouvre pas en écriture — on montre où il est.
+            Http.redirect(exchange, WorkshopTrashPages.URL + "?ok=" + enc("Ce projet est dans la corbeille : "
+                    + "restaurez-le pour l'ouvrir.") + "#projet-" + enc(projectId));
+            return;
+        }
         if (project.isEmpty()) {
             Http.html(exchange, 404, renderPage("Projet introuvable", session, WorkshopPages.BASE,
                     "<h1>Projet introuvable</h1><p class=\"muted\"><a href=\"" + WorkshopPages.BASE
@@ -1596,10 +1720,11 @@ public final class PanelApp {
                 designDocs.history(project.get().id()), designText, importQuery, importPreview,
                 repairInfo(project.get(), draft), failureInfo(project.get(), drafts, draft),
                 versionAudits(drafts));
-        // #881 : la zone « Supprimer le projet », avec l'usage réel et ce qui serait effacé.
-        String deletion = WorkshopPages.deletionCard(session, project.get(),
-                projectUsage(agentId, project.get(), drafts, agentPages.buildingSiteDirectory(agentId)),
-                workshopDeletion.preview(project.get().id()), view.canWrite());
+        // #881 : la zone « Mettre à la corbeille », avec l'usage réel et l'emplacement d'origine.
+        var sites = agentPages.buildingSiteDirectory(agentId);
+        String deletion = WorkshopTrashPages.trashCard(session, project.get(),
+                projectUsage(agentId, project.get(), drafts, sites), WorkshopTrashPages.Origin.of(project.get(), sites),
+                view.canWrite());
         Http.html(exchange, 200, renderPage(project.get().name(), session, WorkshopPages.BASE,
                 WorkshopPages.project(view) + deletion, Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }
@@ -5423,11 +5548,24 @@ public final class PanelApp {
         }
         ActionsPages.Query query = ActionsPages.Query.parse(Http.query(exchange));
         // Issue #169 : les refus avant envoi viennent du journal d'audit existant (aucune migration).
-        List<ActionsPages.Refusal> refusals = audit.recent(1000).stream()
+        var journal = audit.recent(1000);
+        List<ActionsPages.Refusal> refusals = journal.stream()
                 .filter(e -> "agent.action.create".equals(e.action()) && "DENIED".equals(e.result()))
                 .map(e -> ActionsPages.Refusal.of(e.ts(), e.actor(), e.target(), e.details()))
                 .toList();
-        String body = ActionsPages.list(allRecentActions(500), refusals, query, now, playerNames.current());
+        // Issue #881 : les opérations du panel seul sur l'Atelier (corbeille, suppression…) — même journal.
+        String agentId = config.agents().defaultAgentId();
+        Map<String, Optional<ActionsPages.PanelOperation.ProjectRef>> projectRefs = new java.util.HashMap<>();
+        List<ActionsPages.PanelOperation> operations = journal.stream()
+                .filter(e -> e.action() != null && e.action().startsWith("building.project."))
+                .map(e -> ActionsPages.PanelOperation.of(e.ts(), e.actor(), e.action(), e.result(), e.target(),
+                        e.details(), id -> projectRefs.computeIfAbsent(id, k -> planProjects.find(k)
+                                .filter(p -> p.agentId().equals(agentId))
+                                .map(p -> new ActionsPages.PanelOperation.ProjectRef(p.archived()
+                                        ? WorkshopTrashPages.URL + "#projet-" + enc(p.id())
+                                        : WorkshopPages.BASE + "/project?id=" + enc(p.id()), p.name())))))
+                .toList();
+        String body = ActionsPages.list(allRecentActions(500), refusals, operations, query, now, playerNames.current());
         Http.html(exchange, 200, renderPage("Historique des actions", session, "/actions", body));
     }
 

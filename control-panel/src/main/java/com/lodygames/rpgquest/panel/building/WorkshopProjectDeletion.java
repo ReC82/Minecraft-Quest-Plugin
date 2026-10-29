@@ -11,6 +11,8 @@ import java.util.Set;
 
 /**
  * Supprimer définitivement un projet de l'Atelier (issue #881) — ce que le PANEL en garde, rien d'autre.
+ * Seul un projet déjà mis à la corbeille ({@code archived = 1}) peut l'être : la suppression
+ * définitive est un second geste, séparé et confirmé, jamais celui de la fiche.
  *
  * <p>Effacé, dans une seule transaction : la fiche du projet, ses versions de plan (y compris celles
  * retirées de la liste), leurs révisions et leurs liens de vérification, ses jetons de demande, ses
@@ -25,7 +27,7 @@ import java.util.Set;
  */
 public final class WorkshopProjectDeletion {
 
-    public enum Outcome { DELETED, STALE, NOT_FOUND, BUSY }
+    public enum Outcome { DELETED, STALE, NOT_FOUND, BUSY, NOT_IN_TRASH }
 
     /** Ce qui serait réellement effacé. */
     public record Preview(int versions, int revisions, int designs, int runs, int images, long imageBytes) {
@@ -87,13 +89,17 @@ public final class WorkshopProjectDeletion {
         // La fiche d'abord : c'est elle qui dit « version vue » et qui fait échouer le second clic.
         int removed;
         try (PreparedStatement ps = c.prepareStatement(
-                "DELETE FROM building_project WHERE id = ? AND version = ? AND archived = 0")) {
+                "DELETE FROM building_project WHERE id = ? AND version = ? AND archived = 1")) {
             ps.setString(1, projectId);
             ps.setInt(2, expectedVersion);
             removed = ps.executeUpdate();
         }
         if (removed != 1) {
-            return exists(c, projectId) ? Outcome.STALE : Outcome.NOT_FOUND;
+            return switch (archivedFlag(c, projectId)) {
+                case 1 -> Outcome.STALE;
+                case 0 -> Outcome.NOT_IN_TRASH;
+                default -> Outcome.NOT_FOUND;
+            };
         }
         String drafts = "(SELECT id FROM building_plan_draft WHERE project_id = ?)";
         for (String table : new String[] {"building_plan_draft_revision", "building_plan_draft_action",
@@ -111,11 +117,12 @@ public final class WorkshopProjectDeletion {
         return Outcome.DELETED;
     }
 
-    private static boolean exists(Connection c, String projectId) throws SQLException {
-        try (PreparedStatement ps = c.prepareStatement("SELECT 1 FROM building_project WHERE id = ? AND archived = 0")) {
+    /** 1 = à la corbeille, 0 = dans la liste, -1 = introuvable. */
+    private static int archivedFlag(Connection c, String projectId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("SELECT archived FROM building_project WHERE id = ?")) {
             ps.setString(1, projectId);
             try (ResultSet rs = ps.executeQuery()) {
-                return rs.next();
+                return rs.next() ? (rs.getInt(1) != 0 ? 1 : 0) : -1;
             }
         }
     }

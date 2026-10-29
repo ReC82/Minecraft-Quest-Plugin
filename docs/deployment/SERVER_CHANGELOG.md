@@ -49,6 +49,33 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-29 - Plugin : croissance hors ligne des pousses d'arbres dans les claims (#917, TC-447)
+
+### Changement
+
+Phase 2 de #776 : au rechargement d'un chunk de claim, les pousses d'arbres rattrapent leur croissance (barème
+vanilla, stade puis arbre). Arbre calculé à blanc par le générateur vanilla et posé tout ou rien : refusé s'il
+déborde du claim, touche un chunk non chargé ou remplacerait une construction ; `StructureGrowEvent` émis.
+Même marque PDC, même file, même configuration `claims.offline-growth` que #776.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redémarrage. Aucune migration, aucune nouvelle clé de configuration, aucune
+donnée joueur. **Non déployé à la création de cette entrée** (voir le rapport de session #917 et le registre).
+
+### Sauvegarde préalable
+
+Celle du script officiel (JAR + `data.db` + config), comme tout déploiement.
+
+### Validation
+
+TC-447 (`docs/MANUAL_TEST_PLAN.md`), dans le claim du propriétaire et avec son accord.
+
+### Rollback
+
+Remettre le JAR précédent (aucune donnée à restaurer). Les arbres déjà poussés restent (blocs de monde
+ordinaires) ; les pousses non encore rattrapées retrouvent le comportement de #776 (attente).
+
 ## 2026-10-29 - PlugAdmin : Historique unifié, actions agent et opérations du panel (#881, TC-445)
 
 ### Changement

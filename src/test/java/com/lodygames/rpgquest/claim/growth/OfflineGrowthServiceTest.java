@@ -17,6 +17,7 @@ import org.bukkit.Chunk;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
 import org.bukkit.block.data.Ageable;
 import org.bukkit.block.data.type.Farmland;
 import org.bukkit.event.world.ChunkLoadEvent;
@@ -49,6 +50,7 @@ class OfflineGrowthServiceTest {
             ClaimFlags.defaults());
     private OfflineGrowthConfig growth = OfflineGrowthConfig.DEFAULTS;
     private boolean claimsReady = true;
+    private TreePlanner treePlanner = TreePlanner.paper();
 
     @BeforeEach
     void setUp() {
@@ -74,7 +76,7 @@ class OfflineGrowthServiceTest {
         ClaimConfig config = new ClaimConfig(64, 384, 3, 16, "claims", true, 64, 2000, 100, growth);
         return new OfflineGrowthService(plugin, () -> config,
                 world -> world.equals("claims") ? List.of(farm) : List.of(), () -> claimsReady,
-                new PlantGrowthSimulator(new Random(7), server.getPluginManager()),
+                new PlantGrowthSimulator(new Random(7), server.getPluginManager(), treePlanner),
                 LoggerFactory.getLogger(OfflineGrowthServiceTest.class));
     }
 
@@ -248,5 +250,41 @@ class OfflineGrowthServiceTest {
         assertEquals(255, stats.plants());
         System.out.printf("[#776] coût mesuré (MockBukkit) : %d plantes, %d blocs, %d µs pour le chunk%n",
                 stats.plants(), stats.blocksChanged(), stats.nanos() / 1000);
+    }
+
+    @Test
+    void saplingInAReloadedChunkGrowsOneTreeOnlyOnce() {
+        // Issue #917 : générateur factice (MockBukkit ne génère pas d'arbres) — tronc de 4 bûches.
+        int[] calls = {0};
+        treePlanner = (origin, type, random) -> {
+            calls[0]++;
+            List<BlockState> trunk = new java.util.ArrayList<>();
+            for (int y = 0; y < 4; y++) {
+                BlockState state = origin.clone().add(0, y, 0).getBlock().getState();
+                state.setType(Material.OAK_LOG);
+                trunk.add(state);
+            }
+            return trunk;
+        };
+        for (int cx = -1; cx <= 1; cx++) {
+            for (int cz = -1; cz <= 1; cz++) {
+                claims.getChunkAt(cx, cz).load(); // voisins lus par le générateur : chargés, comme en jeu
+            }
+        }
+        claims.getBlockAt(8, 10, 8).setType(Material.GRASS_BLOCK);
+        BlockMock sapling = (BlockMock) claims.getBlockAt(8, 11, 8);
+        sapling.setType(Material.BIRCH_SAPLING);
+        ((BlockMock) claims.getBlockAt(8, 12, 8)).setLightFromSky((byte) 15);
+        OfflineGrowthService service = service();
+
+        unloadAndReload(service, claims, 24 * ONE_HOUR);
+        drain(service);
+        assertEquals(Material.OAK_LOG, sapling.getType());
+        assertEquals(Material.OAK_LOG, claims.getBlockAt(8, 14, 8).getType());
+        assertEquals(1, calls[0]);
+
+        unloadAndReload(service, claims, 24 * ONE_HOUR);
+        drain(service);
+        assertEquals(1, calls[0], "plus de pousse : aucun second arbre");
     }
 }

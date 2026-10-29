@@ -27,10 +27,12 @@ import org.bukkit.plugin.PluginManager;
  * arrondi au hasard ({@link #successes}) puis appliqué avec les règles vanilla : lumière brute ≥ 9,
  * vitesse des cultures selon la terre labourée (humide ou sèche) et les voisines, plafond d'âge,
  * fruit de citrouille/pastèque posé sur terre, colonnes de canne/cactus limitées à 3, bambou limité à
- * 16. Le détail est documenté dans {@code docs/CLAIMS.md}.</p>
+ * 16. Les pousses d'arbres (issue #917) sont déléguées à {@link TreeGrowthSimulator}. Le détail est
+ * documenté dans {@code docs/CLAIMS.md}.</p>
  *
  * <p>Garanties : seuls les blocs de plante, l'air au-dessus d'une colonne et l'air voisin d'une tige
- * mûre sont modifiés, toujours <strong>dans le même claim</strong> ; toute pose ou montée d'âge passe
+ * mûre sont modifiés (plus, pour une pousse, l'arbre entier validé par {@link TreeGrowthSimulator}),
+ * toujours <strong>dans le même claim</strong> ; toute pose ou montée d'âge passe
  * par un {@link BlockGrowEvent} (un événement annulé arrête la plante) ; un voisin situé dans un chunk
  * non chargé est traité comme absent, jamais lu — le mécanisme ne charge aucun chunk.</p>
  */
@@ -55,14 +57,30 @@ public final class PlantGrowthSimulator {
     public static final Set<Material> PLANTS = EnumSet.of(Material.WHEAT, Material.CARROTS, Material.POTATOES,
             Material.BEETROOTS, Material.PUMPKIN_STEM, Material.MELON_STEM, Material.NETHER_WART,
             Material.SWEET_BERRY_BUSH, Material.COCOA, Material.SUGAR_CANE, Material.CACTUS, Material.BAMBOO,
-            Material.BAMBOO_SAPLING);
+            Material.BAMBOO_SAPLING, Material.OAK_SAPLING, Material.SPRUCE_SAPLING, Material.BIRCH_SAPLING,
+            Material.JUNGLE_SAPLING, Material.ACACIA_SAPLING, Material.DARK_OAK_SAPLING, Material.CHERRY_SAPLING,
+            Material.PALE_OAK_SAPLING, Material.MANGROVE_PROPAGULE);
+
+    /** Coût d'une pousse d'arbre dans le budget {@code blocks-per-tick} : un arbre pèse bien plus qu'un âge. */
+    public static final int TREE_COST = 32;
 
     private final RandomGenerator random;
     private final PluginManager pluginManager;
+    private final TreeGrowthSimulator trees;
 
     public PlantGrowthSimulator(RandomGenerator random, PluginManager pluginManager) {
+        this(random, pluginManager, TreePlanner.paper());
+    }
+
+    public PlantGrowthSimulator(RandomGenerator random, PluginManager pluginManager, TreePlanner treePlanner) {
         this.random = random;
         this.pluginManager = pluginManager;
+        this.trees = new TreeGrowthSimulator(random, pluginManager, treePlanner);
+    }
+
+    /** Poids de {@code type} dans le budget par tick : {@link #TREE_COST} pour une pousse d'arbre, sinon 1. */
+    public static int cost(Material type) {
+        return TreeGrowthSimulator.SAPLINGS.contains(type) ? TREE_COST : 1;
     }
 
     /** Random ticks moyens reçus par un bloc pendant {@code elapsedTicks} ticks de jeu. */
@@ -92,6 +110,8 @@ public final class PlantGrowthSimulator {
             case SUGAR_CANE, CACTUS -> column(plant, claim, randomTicks);
             case BAMBOO_SAPLING -> bambooSapling(plant, claim, randomTicks);
             case BAMBOO -> bamboo(plant, claim, randomTicks);
+            case OAK_SAPLING, SPRUCE_SAPLING, BIRCH_SAPLING, JUNGLE_SAPLING, ACACIA_SAPLING, DARK_OAK_SAPLING,
+                 CHERRY_SAPLING, PALE_OAK_SAPLING, MANGROVE_PROPAGULE -> trees.simulate(plant, claim, randomTicks);
             default -> 0;
         };
     }
@@ -325,6 +345,10 @@ public final class PlantGrowthSimulator {
 
     /** Succès attendus {@code trials × chance}, partie fractionnaire tirée au hasard (moyenne exacte). */
     long successes(double trials, double chance) {
+        return successes(random, trials, chance);
+    }
+
+    static long successes(RandomGenerator random, double trials, double chance) {
         double mean = trials * chance;
         long whole = (long) mean;
         return whole + (random.nextDouble() < mean - whole ? 1 : 0);
@@ -358,7 +382,7 @@ public final class PlantGrowthSimulator {
         return block != null && block.getType() == type;
     }
 
-    private static boolean inClaim(Claim claim, Block block) {
+    static boolean inClaim(Claim claim, Block block) {
         return claim.contains(block.getWorld().getName(), block.getX(), block.getY(), block.getZ());
     }
 

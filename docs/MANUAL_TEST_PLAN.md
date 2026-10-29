@@ -9387,6 +9387,35 @@ définitive confirmée, seconds clics, historique visible avec refus et acteur ;
 corbeille ; projet devenu posé non supprimable ; refus posé / publié / portail / incertain / en attente / rôle),
 `WorkshopProjectDeletionTest` (4), `WorkshopTrashPagesTest` (2 : origine distincte de l'usage).
 
+### TC-447 — Claims : les pousses d'arbres poussent sans joueur, jamais hors du claim (issue #917, PENDING MANUAL VALIDATION)
+
+JAR RPGQuest contenant #917 (aucune migration, aucune config nouvelle). Monde `claims`, **son propre claim** ;
+uniquement avec l'accord du propriétaire (aucune pousse artificielle posée par l'équipe sur DEV).
+Réglage par défaut : `claims.offline-growth.enabled: true`, 24 h rattrapées au plus.
+
+1.  Dans son claim, au soleil, sur herbe ou terre, **à au moins 3 blocs du bord** : planter un chêne, un
+    bouleau, un cerisier ; un carré 2×2 de pousses de chêne noir à au moins 6 blocs du bord ; **une pousse de
+    bouleau collée au bord du claim** (à 1 bloc) ; une pousse de chêne sous un bloc de planches posé 3 blocs
+    au-dessus d'elle.
+2.  S'éloigner d'au moins 15 chunks (ou retourner au Hub) pendant **30 à 40 minutes** réelles, serveur allumé.
+3.  Revenir. **Attendu** : la plupart des pousses dégagées sont devenues des arbres (vanilla : ≈ 1 chance sur
+    2 en 30 min au soleil ; refaire 2–3 si l'une attend encore) ; le chêne noir est un seul arbre 2×2 ; la
+    pousse collée au bord est **toujours une pousse** (l'arbre aurait débordé) ; aucun bloc posé hors du claim ;
+    la planche est intacte (la pousse dessous est restée pousse ou a fait un arbre sans toucher la planche —
+    un tronc plus court que la planche est possible, jamais de planche remplacée) ; aucun objet au sol.
+4.  Repartir puis revenir **aussitôt**. **Attendu** : rien de nouveau (pas de second arbre, pas de bond).
+5.  (Optionnel, admin) Console : chaque chunk traité au-delà de 20 ms est journalisé en INFO
+    (`Croissance hors ligne : chunk …`) ; noter le temps si une ligne apparaît.
+
+**Couverture automatisée** : `TreeGrowthSimulatorTest` (chêne via `StructureGrowEvent` non bonemeal, essences
+bouleau/sapin/jungle/acacia/cerisier → `TreeType` vanilla, 2×2 sapin et jungle depuis le coin nord-ouest,
+chêne noir isolé jamais un arbre, arbre débordant du claim refusé et pousse remise, construction jamais
+remplacée, herbe et feuillage remplacés, événement annulé et tentatives plafonnées à 4, chunk voisin non
+chargé → aucune génération, obscurité, lumière de blocs et part du jour, un succès = stade seulement, pas de
+second arbre, politique de remplacement, propagule suspendue et palétuvier),
+`OfflineGrowthServiceTest.saplingInAReloadedChunkGrowsOneTreeOnlyOnce`. Le générateur vanilla réel n'est pas
+exécutable sous MockBukkit : la forme réelle des arbres n'est vérifiable qu'en jeu.
+
 ### TC-446 — PlugAdmin : file de développement lqorch en lecture seule (issue #907, PENDING MANUAL VALIDATION)
 
 Pré-requis : superviseur à jour (`scripts/orchestrator/install.sh` + `lqorch reload`, fichier

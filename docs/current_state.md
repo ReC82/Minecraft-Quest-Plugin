@@ -90,8 +90,16 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > consomme la marque puis applique la croissance moyenne vanilla (`PlantGrowthSimulator` : cultures, tiges et
 > fruit unique, verrues, baies, cacao, canne/cactus ≤ 3, bambou ≤ 16 ; lumière, terre humide, plafonds),
 > par lots (`blocks-per-tick`), via `BlockGrowEvent`, dans les cuboïdes de claims seulement, sans charger de
-> chunk. Config `claims.offline-growth` (activée, monde des claims, 24 h max). Arbres non couverts.
+> chunk. Config `claims.offline-growth` (activée, monde des claims, 24 h max).
 > Aucune migration. PENDING MANUAL VALIDATION (TC-420).
+
+> **Croissance hors ligne des pousses d'arbres (#917, 29/10/2026)** — `claim.growth.TreeGrowthSimulator`
+> (appelé par `PlantGrowthSimulator`, même file et même marque que #776) : 1/7 × part de lumière, stade 1 puis
+> arbre vanilla calculé à blanc (`TreePlanner` → `generateTree` avec prédicat) et posé **tout ou rien** —
+> refusé s'il sort du claim, touche un chunk non chargé ou remplacerait un bloc autre qu'air / feuillage /
+> végétation remplaçable / terre ; `StructureGrowEvent` annulable ; 2×2 vanilla (grands sapins, jungle, chêne
+> noir, chêne pâle) ; générateur appelé seulement si les chunks à 16 blocs sont chargés ; une pousse = 32
+> plantes du budget. Aucune migration, aucune config nouvelle. PENDING MANUAL VALIDATION (TC-447).
 
 > **Claims dans PlugAdmin (#637, 21/10/2026)** — page `/claims` (groupe « RPGQuest », sous Joueurs),
 > permission `CLAIM_READ` (Propriétaire, Administrateur, Testeur), action agent `claim.list` : tous les

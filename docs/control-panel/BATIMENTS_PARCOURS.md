@@ -76,9 +76,12 @@ d'écrit), puis « Importer comme nouvelle version de ce projet » : une copie, 
 description — sans casse ni accents), des filtres (Tous, Brouillons, En bibliothèque, Utilisés en jeu, Non
 utilisés, Utilisation à vérifier, À corriger) et un tri (récents, anciens, nom). Chaque tuile dit **Utilisé en
 jeu** (avec « Voir où utilisé »), **Non utilisé** ou **Utilisation à vérifier**. En bas de la fiche d'un projet,
-**« Supprimer le projet »** efface seulement ce que le panel garde de la conception, et seulement si le
+**« Mettre à la corbeille »** retire le projet de la liste **sans rien effacer** ; la **Corbeille**
+(`/buildings/workshop/trash`) permet de le **restaurer**, ou de le **supprimer définitivement** (identifiant à
+recopier) — ce qui n'efface que ce que le panel garde de la conception. Les deux gestes ne sont permis que si le
 bâtiment n'est ni posé, ni lié à un portail, ni publié dans la bibliothèque (pour un bâtiment publié, passer
-par la Bibliothèque, #644), et si l'usage est vérifiable. Aucun bloc du monde n'est touché.
+par la Bibliothèque, #644), et si l'usage est vérifiable. Aucun bloc du monde n'est touché. Chaque geste, refus
+compris, apparaît dans **Historique → « Opérations du panel »**.
 
 ## Ce que l'ancien parcours devient
 

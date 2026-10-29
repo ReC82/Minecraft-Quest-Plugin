@@ -9358,6 +9358,35 @@ projet réel** : seulement un projet d'essai créé pour l'occasion (aucun appel
 6.  Mobile (390 px) : barre de recherche, puces de filtre, tuiles et zone de suppression lisibles, sans
     défilement horizontal.
 
+### TC-442 — Atelier : corbeille réversible et historique visible des suppressions (issue #881, retour du 29/10, PENDING MANUAL VALIDATION)
+
+**Prérequis** : PlugAdmin issu de la branche `feature/881-atelier-corbeille` (déploiement à autoriser),
+compte Propriétaire. **Durée** : 10 minutes. **Uniquement** sur un projet d'essai créé pour l'occasion (aucun
+appel IA : ne pas demander de plan) ; ne pas recréer « Essai 881 » (supprimé le 29/10, **non récupérable** : la
+suppression d'alors était définitive et aucune sauvegarde de la base du panel n'est postérieure à sa création).
+Aucun projet existant ne doit être mis à la corbeille.
+
+1.  `/actions` → onglet « Opérations du panel » : la ligne « Supprimé définitivement » d'**Essai 881**
+    (`essai_881`, 29/10 13:15, owner, « n'existe plus ») et sa création (13:11) sont visibles.
+2.  `/buildings/sites` → Rafraîchir. Atelier → Nouveau projet « Essai corbeille », identifiant
+    `essai_corbeille_881`, sans plan. Sa fiche → « Mettre à la corbeille — Non utilisé » → bouton. **Attendu** :
+    message « mis à la corbeille… peut être restauré », le projet a disparu de la liste, « Corbeille (1) ».
+3.  Corbeille : la carte dit qui et quand. « Restaurer dans l'Atelier » → la fiche s'ouvre, le projet est de
+    retour dans la liste.
+4.  Le remettre à la corbeille. « Supprimer définitivement… » : recopier un mauvais identifiant → refus, rien
+    supprimé. Recopier `essai_corbeille_881`, cocher, supprimer → « La corbeille est vide ».
+5.  `/actions` → « Opérations du panel » : création, mise à la corbeille, restauration, refus (motif lisible),
+    suppression définitive, avec l'acteur et un lien « Ouvrir » tant que le projet existait.
+6.  Fiche « Bibliothèque du Hub » : « Importé de l'emplacement « Bibliothèque du Hub » `buildsite_0009` : porte
+    aujourd'hui le bâtiment `la_grande_librairie` v1 » ; « Mise à la corbeille impossible » (publié dans la
+    bibliothèque), aucun bouton. **Ne rien retirer.**
+7.  Mobile (390 px) : corbeille et onglet de l'historique lisibles, sans défilement horizontal.
+
+**Couverture automatisée** : `WorkshopProjectCleanup881Test` (12 : corbeille → restauration → suppression
+définitive confirmée, seconds clics, historique visible avec refus et acteur ; version périmée ; jamais hors
+corbeille ; projet devenu posé non supprimable ; refus posé / publié / portail / incertain / en attente / rôle),
+`WorkshopProjectDeletionTest` (4), `WorkshopTrashPagesTest` (2 : origine distincte de l'usage).
+
 ### TC-437 — Classements par type de créature sur le portail bêta (issue #734, PENDING MANUAL VALIDATION)
 
 **But** : chaque créature réellement tuée (zombie, squelette, araignée…) a son propre classement, distinct du cumul « Monstres » ; un mob spécial RPGQuest a le sien, séparé de sa créature de base ; rien n'est inventé pour les types jamais tués.

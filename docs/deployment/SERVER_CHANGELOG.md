@@ -49,6 +49,38 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-29 - PlugAdmin : corbeille réversible de l'Atelier et historique visible des suppressions (#881, TC-442)
+
+### Changement
+
+Sur la fiche d'un projet, « Supprimer le projet » devient « Mettre à la corbeille » (rien n'est effacé). Nouvelle
+page `/buildings/workshop/trash` : restaurer, ou supprimer définitivement (identifiant à recopier). Mêmes refus
+côté serveur qu'avant (posé, portail, publié, incertain, en cours, rôle, version). `/actions` gagne l'onglet
+« Opérations du panel » (audit `building.project.*`, refus compris). Origine d'un projet importé affichée
+(emplacement, bâtiment réellement posé).
+
+### Action serveur
+
+**À effectuer, non déployé** (déploiement à autoriser par le propriétaire) : PlugAdmin seul
+(`scripts/plugadmin/deploy.sh`), JAR Minecraft inchangé. **Aucune migration** : la colonne existante
+`building_project.archived` (toujours 0 sur DEV au 29/10) porte la corbeille. Aucun projet existant n'est modifié
+au démarrage.
+
+### Sauvegarde préalable
+
+Release PlugAdmin précédente (gérée par `deploy.sh`) ; instantané `.backup` de `control-panel.db`.
+
+### Validation
+
+TC-442 — PENDING MANUAL VALIDATION, sur projet d'essai seulement.
+
+### Rollback
+
+Redéployer la release PlugAdmin précédente. Un projet mis à la corbeille entre-temps (`archived = 1`) disparaît alors
+de la liste sans être effacé : le restaurer avant le rollback, ou le relire en base.
+
+---
+
 ## 2026-10-29 - Plugin + PlugAdmin : capture de bâtiment — livres visibles, objets affichés et aperçu en français (#903, TC-441)
 
 ### Changement

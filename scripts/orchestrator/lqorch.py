@@ -783,6 +783,7 @@ def pause_for(con, seconds):
     while time.time() < end:
         if ctl_get(con, "mode", "RUNNING") != start_mode or ctl_get(con, "reload_requested"):
             return
+        write_snapshot(con)
         time.sleep(min(2, max(0.1, end - time.time())))
 
 

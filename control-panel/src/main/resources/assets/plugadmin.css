@@ -1890,3 +1890,24 @@ details.p-history>summary{font-size:16px;color:var(--txt);display:flex;align-ite
 .player-suggest{list-style:none;margin:4px 0 12px;padding:0;display:flex;flex-direction:column;gap:6px}
 .player-suggest li{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .player-suggest .faint{font-size:12px;overflow-wrap:anywhere}
+
+/* Issue #907 — File de développement (lqorch) : cartes de tickets repliables, lisibles à 390 px. */
+.orch-filters{margin:12px 0 4px}
+.orch-filters input[type=search]{flex:1 1 240px}
+.orch-filters select{flex:0 1 230px;width:auto;max-width:100%}
+@media(max-width:575.98px){.orch-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}
+.orch-group{margin:20px 0 0}
+.orch-group>.section-title .badge{margin-left:4px}
+.orch-help{font-size:13px;margin:0 0 6px}
+details.orch-t{margin:8px 0;padding:10px 14px}
+details.orch-t>summary{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;color:var(--txt);font-weight:600}
+.orch-t-h{flex:1 1 320px;min-width:0;overflow-wrap:anywhere}
+.orch-t-b{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;font-weight:400}
+.orch-t-why{flex-basis:100%;font-size:13px;font-weight:400;color:var(--txt-2);overflow-wrap:anywhere}
+.orch-t-body .meta-line{overflow-wrap:anywhere}
+.orch-auto li{margin:3px 0;overflow-wrap:anywhere}
+.orch-list{list-style:none;padding:0;margin:6px 0 0}
+.orch-list li{display:flex;flex-direction:column;gap:2px;padding:8px 0;border-bottom:1px solid var(--line)}
+.orch-list li:last-child{border-bottom:0}
+.orch-li-h{overflow-wrap:anywhere}
+.orch-li-d{font-size:13px;color:var(--txt-2);overflow-wrap:anywhere}

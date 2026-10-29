@@ -47,6 +47,14 @@ public final class TestConfig {
         return build(dbPath, bridgeUrl, false, AgentSettings.none(), contentRepoDir);
     }
 
+    /** Même configuration, avec un instantané lqorch fictif pour la page {@code /orch} (issue #907). */
+    public static PanelConfig withOrchSnapshot(PanelConfig c, String snapshotPath) {
+        return new PanelConfig(c.httpPort(), c.bind(), c.baseUrl(), c.disabled(), c.cookieSecure(),
+                c.sessionTtlMinutes(), c.sessionIdleMinutes(), c.panelDbPath(), c.ownerUsername(),
+                c.ownerPasswordHash(), c.sessionSecret(), c.targets(), c.defaultTargetId(), c.agents(),
+                c.contentRepoDir(), c.ops(), snapshotPath);
+    }
+
     private static AgentSettings agentSettings() {
         return new AgentSettings(
                 List.of(new AgentIdentity(AGENT_ID, "dev", AGENT_TOKEN)),
@@ -61,6 +69,8 @@ public final class TestConfig {
                 OWNER_USERNAME, OWNER_HASH, SESSION_SECRET, List.of(dev), "dev", agents, contentRepoDir,
                 // Issue #95 : aucun accès RCON en test — la page doit donc afficher « redémarrage
                 // indisponible » avec son motif, ce qui est précisément le cas à couvrir.
-                OpsSettings.defaults());
+                OpsSettings.defaults(),
+                // Issue #907 : jamais l'instantané réel du superviseur en test.
+                null);
     }
 }

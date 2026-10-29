@@ -27,6 +27,8 @@ import java.util.Optional;
  *                           {@code null} = éditeur désactivé
  * @param ops                configuration « exploitation serveur » (issue #95) : points d'accès
  *                           RCON par cible et délais du redémarrage
+ * @param orchSnapshotPath   instantané de la file {@code lqorch} lu par la page {@code /orch}
+ *                           (issue #907) ; {@code null} = vue non configurée
  */
 public record PanelConfig(
         int httpPort,
@@ -44,7 +46,8 @@ public record PanelConfig(
         String defaultTargetId,
         AgentSettings agents,
         String contentRepoDir,
-        OpsSettings ops) {
+        OpsSettings ops,
+        String orchSnapshotPath) {
 
     public PanelConfig {
         targets = targets == null ? List.of() : List.copyOf(targets);

@@ -667,6 +667,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (`NOT_APPLIED` plutôt qu'un faux succès). OP Minecraft reste distinct du rôle PlugAdmin, du droit
   de construction (#200) et du bypass de gameplay (#35) : aucun n'est modifié. Cible par **UUID** ;
   actions impossibles hors ligne affichées avec leur motif.
+- **File de développement lqorch dans PlugAdmin (issue #907, lecture seule)** — page `/orch`
+  (permission `ORCH_READ`, propriétaire par défaut) : état du superviseur, session en cours, tickets
+  En cours / Prêts / En attente / Bloqués / Terminés récemment, motifs d'exclusion de la file
+  automatique `agent:auto`, dernières sessions, filtres état / priorité / texte. Source unique :
+  instantané JSON publié par `lqorch` (`/var/lib/lodyquests-orch/queue.json`, écrit atomiquement
+  au plus une fois par minute, sans appel GitHub, sans journal / PID / coût) ; cache par date et
+  taille côté panel ; fichier absent, invalide ou ancien signalé explicitement. Aucune action.
 - **Exploitation serveur depuis PlugAdmin (issue #95, lot 1)** — page `/ops` : état réel et
   **fraîcheur** du dernier heartbeat (vivacité agent, joueurs, uptime, version), annonce globale
   (`server.announce` — trois canaux réellement supportés `chat`/`actionbar`/`title`, message traité

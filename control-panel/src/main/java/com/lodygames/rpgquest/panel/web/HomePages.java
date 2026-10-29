@@ -88,6 +88,9 @@ public final class HomePages {
                     new Tile("database", "/database", "server", "Base de données",
                             "Backend actif, base MariaDB cible (test de connexion) et assistant de migration.",
                             Permission.DATABASE_CONFIGURE, true),
+                    new Tile("orch", OrchPages.PATH, "history", "File de développement",
+                            "Suivi du superviseur lqorch : tickets en cours, prêts, en attente, bloqués (lecture seule).",
+                            Permission.ORCH_READ, true),
                     new Tile("dev", "/dev", "dev", "Développement",
                             "GitHub, rapports Claude, tests, build et déploiements.",
                             Permission.DEV_MODULE, false))));

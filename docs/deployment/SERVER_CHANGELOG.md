@@ -49,6 +49,51 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-29 - Déploiement groupé : JAR `c5f1c323` (#917 + #734 + #903) et portail AWS
+
+### Changement
+
+Mise en ligne des trois lots plugin fusionnés depuis le JAR `002facdb` : #903 (capture de bâtiment, TC-441),
+#734 (mesure `ANIMAL_BRED` et classements d'élevage, TC-443), #917 (pousses d'arbres hors ligne dans les claims,
+TC-447). Audit du delta `002facdb..c5f1c323` : seuls ces trois commits touchent `src/` ; aucune migration (code
+max V45 = base DEV V45), aucun fichier de configuration, `build.gradle.kts` inchangé (Paper API 1.21.11).
+#917 peut faire pousser **naturellement** des pousses déjà présentes dans les claims au rechargement de leur
+chunk ; aucune pousse n'a été forcée, aucun claim touché.
+
+### Action serveur
+
+**Effectué le 29/10/2026 vers 21:55 (heure de Paris)**, sur autorisation écrite du propriétaire (commentaires
+#917 et #734 du 29/10 20:44 UTC) : `RPGQUEST_TEST_MAX_HEAP=768m scripts/deploy-verygames.sh -y` depuis
+`c5f1c323` (validation « CI verte sur ce1eb7b », run 40950964675 : plugin, web-api, control-panel, Scripts,
+Artefacts, CI OK), puis `scripts/verygames-restart.sh --timeout 300` (0 joueur, save-all, stop RCON, ONLINE).
+Portail AWS : `scripts/web-portal/deploy.sh` → `c5f1c32` (seul changement web-api : libellés élevage #734).
+PlugAdmin non redéployé : `92d5c03d` servi contient déjà les libellés de #734 et le panel de #903.
+
+### Sauvegarde préalable
+
+- JAR précédent : `~/.local/share/rpgquest/verygames-backups/rpgquest-20261029T205438Z-predeploy.jar`
+  (4 448 134 o, SHA-256 `0c977c7a…`, `.meta` à côté) ;
+- `data.db` (téléchargement FTP en lecture, le script ne la sauvegarde pas) :
+  `data.db-20261029T205358Z-pre-917-734-903` (SHA-256 `b0df90ba…`, `user_version` 45, `integrity_check` ok) ;
+- portail : release précédente `/opt/lodyquests-portal/releases/20261029-215624`.
+
+### Validation
+
+JAR distant retéléchargé : SHA-256 `b6191c23…` identique au build (4 466 802 o), contient
+`TreeGrowthSimulator`, `CaptureContent` et les classements `breeding_*`. `/plugins` → RPGQuest vert ;
+`version RPGQuest` répond. `data.db` relue après démarrage : V45, intégrité ok. `config.yml` distant non modifié
+(dernière modification 23/10). Portail : `/health` UP, snapshot FRESH (relevé du plugin redémarré), server
+ONLINE ; `/classements/tous` affiche « Éleveurs de la semaine » et « Animaux élevés ». Journal serveur
+(`logs/latest.log`) inaccessible par FTP : absence d'ERROR au démarrage non vérifiée directement. TC-441, TC-443,
+TC-447 : PENDING MANUAL VALIDATION.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` (JAR `rpgquest-20261029T205438Z-predeploy.jar`) puis
+`scripts/verygames-restart.sh`. Ne pas restaurer `data.db` (aucune migration) sauf corruption avérée, serveur
+arrêté. Les arbres déjà poussés restent (blocs ordinaires) ; les lignes `ANIMAL_BRED` restent dans
+`stat_activity_log` sans être lues. Portail : `scripts/web-portal/rollback.sh`.
+
 ## 2026-10-29 - Plugin : croissance hors ligne des pousses d'arbres dans les claims (#917, TC-447)
 
 ### Changement

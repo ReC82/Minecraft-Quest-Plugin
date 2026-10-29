@@ -50,6 +50,18 @@ public final class NotificationCenter {
         this.names = names;
     }
 
+    /** #881 (TC-442) : opérations du panel seul (Atelier), lues dans l'audit — vide par défaut. */
+    private java.util.function.Supplier<List<ActionsPages.PanelOperation>> panelOperations = List::of;
+
+    /**
+     * #881 (TC-442) — une corbeille ou une suppression définitive n'est pas une action agent : elle
+     * n'apparaissait nulle part dans la cloche. Les dernières, de la plus récente à la plus ancienne,
+     * s'affichent désormais dans une section à part du panneau.
+     */
+    public void usePanelOperations(java.util.function.Supplier<List<ActionsPages.PanelOperation>> source) {
+        this.panelOperations = source == null ? List::of : source;
+    }
+
     /**
      * Les {@code SCAN} dernières actions <strong>opérateur</strong>, tous agents confondus, triées de
      * la plus récente à la plus ancienne. Les relevés de catalogue ré-enfilés automatiquement après
@@ -171,6 +183,7 @@ public final class NotificationCenter {
                 + "</div>"
                 + "<div class=\"offcanvas-body notif-body-wrap\">"
                 + "<div class=\"notif-list\" data-notif-list>" + items + "</div>"
+                + panelOperationsHtml(now)
                 + "</div>"
                 + "<div class=\"notif-foot-wrap\">"
                 + (reads == null || csrfToken == null || csrfToken.isEmpty() ? ""
@@ -182,5 +195,41 @@ public final class NotificationCenter {
                 + "<span>Voir toutes les actions</span>" + Icons.icon("chevron") + "</a>"
                 + "</div>"
                 + "</aside>";
+    }
+
+    /** Nombre d'opérations du panel montrées dans la cloche. */
+    static final int PANEL_OPERATIONS_SHOWN = 3;
+    /** Les opérations du panel signalées dans la cloche : retirer, restaurer, supprimer un projet. */
+    static final java.util.Set<String> PANEL_OPERATIONS_IN_BELL = java.util.Set.of(
+            "building.project.trash", "building.project.restore", "building.project.delete");
+
+    /**
+     * La section « Opérations du panel (Atelier) » : hors de {@code data-notif-list}, que le
+     * rafraîchissement de {@code panel.js} réécrit avec les seules actions agent.
+     */
+    private String panelOperationsHtml(Instant now) {
+        List<ActionsPages.PanelOperation> ops = panelOperations.get();
+        if (ops == null || ops.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<section class=\"notif-panel-ops\" aria-label=\"Opérations du panel\">")
+                .append("<h3 class=\"notif-sub\">Opérations du panel (Atelier)</h3>");
+        for (ActionsPages.PanelOperation o : ops.subList(0, Math.min(PANEL_OPERATIONS_SHOWN, ops.size()))) {
+            sb.append("<a class=\"notif-item\" href=\"").append(ActionsPages.PANEL_OPERATIONS_URL).append("\">")
+                    .append("<span class=\"notif-ic\">").append(Icons.icon("trash")).append("</span>")
+                    .append("<span class=\"notif-body\"><span class=\"notif-t\">").append(Http.esc(o.label()));
+            if (!o.name().isEmpty() || !o.buildingId().isEmpty()) {
+                sb.append(" <span class=\"notif-tgt\">")
+                        .append(Http.esc(o.name().isEmpty() ? o.buildingId() : o.name())).append("</span>");
+            }
+            sb.append("</span><span class=\"notif-meta\"><span class=\"notif-status ")
+                    .append(o.ok() ? "text-success\">" + Icons.icon("check") + "Fait"
+                            : "text-danger\">" + Icons.icon("error") + "Refusé")
+                    .append("</span> · ").append(Http.esc(ActionView.relativeTime(o.at(), now)))
+                    .append(" · ").append(Http.esc(o.actor())).append("</span></span></a>");
+        }
+        return sb.append("<a class=\"notif-foot\" href=\"").append(ActionsPages.PANEL_OPERATIONS_URL).append("\">")
+                .append(Icons.icon("history")).append("<span>Voir les opérations du panel</span>")
+                .append(Icons.icon("chevron")).append("</a></section>").toString();
     }
 }

@@ -138,6 +138,7 @@ public final class PanelApp {
     /** Issue #95 — exploitation serveur : redémarrage piloté et page dédiée. */
     private final RestartService restartService;
     private final OpsPages opsPages;
+    private final OrchPages orchPages;
     /** Dernière annonce acceptée, pour l'intervalle minimal anti-matraquage (#95). */
     private final java.util.concurrent.atomic.AtomicReference<Instant> lastAnnounceAt =
             new java.util.concurrent.atomic.AtomicReference<>(Instant.EPOCH);
@@ -259,6 +260,9 @@ public final class PanelApp {
                 config.ops().restartStopGrace());
         this.opsPages = new OpsPages(agentStore, permissions, restartService,
                 config.agents().thresholds(), opsAgentId, null);
+        this.orchPages = new OrchPages(new com.lodygames.rpgquest.panel.orch.OrchSnapshotReader(
+                config.orchSnapshotPath() == null || config.orchSnapshotPath().isBlank() ? null
+                        : java.nio.file.Path.of(config.orchSnapshotPath())), Instant::now);
         this.agentEndpoints = new AgentEndpoints(agentRegistry, agentStore, audit,
                 config.agents().actionExpiry(), config::disabled);
         this.agentEndpoints.onResult(id -> {
@@ -476,6 +480,9 @@ public final class PanelApp {
         // Issue #95 — exploitation serveur. /ops rend la page ; les deux endpoints JSON
         // alimentent la console et le suivi d'opération sans rechargement complet.
         route("/ops", this::handleOps);
+        // Issue #907 — file du superviseur lqorch, LECTURE SEULE : aucune route d'écriture.
+        route(OrchPages.PATH, exchange -> handleBusinessPage(exchange, OrchPages.PATH, "File de développement",
+                Permission.ORCH_READ, orchPages::render));
         route("/ops/restart", this::handleOpsRestart);
         route("/ops/restart/cancel", this::handleOpsRestartCancel);
         route("/ops/logs.json", this::handleOpsLogsJson);

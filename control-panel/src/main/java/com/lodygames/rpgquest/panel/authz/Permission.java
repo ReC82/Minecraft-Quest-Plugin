@@ -332,7 +332,14 @@ public enum Permission {
      * passe chiffré) et tester la connexion. Réservée au propriétaire par défaut : c'est un accès
      * à l'infrastructure. Ne permet aucune migration ni bascule (aucune route ne le fait).
      */
-    DATABASE_CONFIGURE;
+    DATABASE_CONFIGURE,
+    /**
+     * Issue #907 — consulter la file du superviseur de développement {@code lqorch} (page
+     * {@code /orch}) : tickets en cours, prêts, en attente, bloqués, motifs d'exclusion de la file
+     * automatique, dernières sessions. Lecture seule : aucune route ne modifie la file. Réservée au
+     * propriétaire par défaut (attribuable par groupe) : c'est l'outillage interne du projet.
+     */
+    ORCH_READ;
 
     /**
      * Permission portant ce nom, ou vide si le nom est inconnu. Utilisé à la lecture d'un groupe en

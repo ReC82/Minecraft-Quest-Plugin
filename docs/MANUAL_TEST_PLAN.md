@@ -9387,6 +9387,23 @@ définitive confirmée, seconds clics, historique visible avec refus et acteur ;
 corbeille ; projet devenu posé non supprimable ; refus posé / publié / portail / incertain / en attente / rôle),
 `WorkshopProjectDeletionTest` (4), `WorkshopTrashPagesTest` (2 : origine distincte de l'usage).
 
+### TC-446 — PlugAdmin : file de développement lqorch en lecture seule (issue #907, PENDING MANUAL VALIDATION)
+
+Pré-requis : superviseur à jour (`scripts/orchestrator/install.sh` + `lqorch reload`, fichier
+`/var/lib/lodyquests-orch/queue.json` présent) et PlugAdmin déployé. Aucun test en jeu.
+
+1. Menu Administration → « File de développement » (ou tuile de l'accueil) : la page s'ouvre, carte
+   « Superviseur » = Actif, « mis à jour » de moins d'une minute à deux.
+2. Le ticket en cours de traitement apparaît dans « Session en cours » et dans **En cours** ;
+   les tickets en attente de recette sont dans **En attente du propriétaire** avec leur motif.
+3. Déplier un ticket : prochaine action, blocage, PR (lien), rapports cités ; le lien `#N` ouvre
+   le bon ticket GitHub.
+4. Section « File automatique » : date du dernier examen, admissibles (ou « aucun ») et écartés avec
+   un motif compréhensible.
+5. Filtres : état « Bloqués », priorité « P1 », recherche par numéro ; « Tout afficher » revient.
+6. Téléphone (≈ 390 px) : rien ne déborde horizontalement, tout reste lisible.
+7. Aucune case, aucun bouton ne modifie la file ; un compte sans `ORCH_READ` reçoit un refus.
+
 ### TC-444 — Atelier : corbeille et suppression visibles dans la cloche et l'Historique (issue #881, retour TC-442 du 29/10, PENDING MANUAL VALIDATION)
 
 **Cause établie (lecture seule, copie de la base live du 29/10 17:56)** : les deux gestes du propriétaire sont bien

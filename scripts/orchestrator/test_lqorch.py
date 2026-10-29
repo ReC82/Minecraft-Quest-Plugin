@@ -65,7 +65,7 @@ class Base(unittest.TestCase):
         self.env = dict(os.environ, LQ_STATE_DIR=str(self.state), LQ_LAUNCH_DIR=str(root), LQ_WORKDIR=str(root),
                         LQ_CLAUDE=str(write_exec(root / "claude", FAKE_CLAUDE)),
                         LQ_GH=str(write_exec(root / "gh", FAKE_GH)), LQ_POLL="1")
-        for key in [k for k in self.env if k.startswith(("LQ_MAX", "LQ_MIN", "LQ_SESSION"))]:
+        for key in [k for k in self.env if k.startswith(("LQ_MAX", "LQ_MIN", "LQ_SESSION", "LQ_SNAPSHOT"))]:
             del self.env[key]
         self.mod = self.load()
         self.con = self.mod.db()
@@ -511,3 +511,84 @@ class AutoSelectTest(Base):
             self.assertEqual(self.mod.cmd_auto(self.con, mock.Mock(action="show", issue=None, reason="")), 0)
         self.assertIsNone(self.mod.task(self.con, 7))
         self.assertEqual(self.gh.posted, [])
+
+
+class SnapshotTest(Base):
+    """Instantané lu par la vue PlugAdmin (#907) : local, sans secret, jamais l'instantané réel."""
+
+    def setUp(self):
+        super().setUp()
+        self.con.execute("DELETE FROM tasks")
+        self.con.commit()
+        self.gh = FakeGitHub()
+        for target, fake in (("gh_json", self.gh.gh_json), ("gh_comment", lambda n, body: True)):
+            patcher = mock.patch.object(self.mod, target, fake)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    local = AutoSelectTest.local
+    picked = AutoSelectTest.picked
+
+    def test_test_state_dir_never_targets_the_real_snapshot(self):
+        self.assertEqual(self.mod.SNAPSHOT_PATH, self.state / "queue.json")
+
+    def test_written_atomically_readable_and_without_logs_or_pids(self):
+        self.local(12, "WAITING_OWNER", blockers="recette TC-1")
+        self.con.execute("UPDATE sessions SET log_path='/home/x/secret.jsonl', pid=4242, cost_usd=9")
+        self.con.commit()
+        self.assertTrue(self.mod.write_snapshot(self.con, force=True))
+        path = self.mod.SNAPSHOT_PATH
+        self.assertEqual(oct(path.stat().st_mode & 0o777), "0o644")
+        self.assertEqual([p.name for p in path.parent.glob(".queue.json*")], [])
+        raw = path.read_text(encoding="utf-8")
+        for leak in ("secret.jsonl", "4242", "log_path", "cost"):
+            self.assertNotIn(leak, raw)
+        data = json.loads(raw)
+        self.assertEqual(data["version"], 1)
+        ticket = next(t for t in data["tasks"] if t["issue"] == 12)
+        self.assertEqual((ticket["status"], ticket["blockers"]), ("WAITING_OWNER", "recette TC-1"))
+        self.assertEqual(data["sessions"][0]["issue"], 12)
+        self.assertEqual(self.gh.paths, [], "l'instantané ne doit jamais appeler GitHub")
+
+    def test_throttled_unless_forced(self):
+        self.assertTrue(self.mod.write_snapshot(self.con, force=True))
+        self.assertFalse(self.mod.write_snapshot(self.con))
+        self.assertTrue(self.mod.write_snapshot(self.con, force=True))
+
+    def test_auto_examination_keeps_exclusion_reasons_and_known_rank(self):
+        self.gh.issue(4, "agent:auto", "priority:P2", "blocked")
+        self.gh.issue(5, "agent:auto")
+        self.gh.issue(6, "agent:auto", "priority:P1")
+        self.assertEqual(self.picked(), 6)
+        auto = self.mod.snapshot(self.con)["auto"]
+        self.assertTrue(auto["examined_at"])
+        self.assertEqual([(e["issue"], e["rank"]) for e in auto["eligible"]], [(6, 1)])
+        excluded = {e["issue"]: e for e in auto["excluded"]}
+        self.assertEqual((excluded[4]["rank"], excluded[4]["reason"]), (2, "label blocked"))
+        self.assertIsNone(excluded[5]["rank"])
+
+    def test_unwritable_target_is_reported_once_without_stopping(self):
+        missing = self.state / "absent" / "queue.json"
+        with mock.patch.object(self.mod, "SNAPSHOT_PATH", missing):
+            self.assertFalse(self.mod.write_snapshot(self.con, force=True))
+            self.assertFalse(self.mod.write_snapshot(self.con, force=True))
+        self.assertIn("absent", self.mod.ctl_get(self.con, "snapshot_error"))
+        events = self.con.execute("SELECT COUNT(*) c FROM events WHERE message LIKE 'Instantané PlugAdmin%'")
+        self.assertEqual(events.fetchone()["c"], 1)
+        self.assertTrue(self.mod.write_snapshot(self.con, force=True))
+        self.assertEqual(self.mod.ctl_get(self.con, "snapshot_error"), "")
+
+    def test_reports_are_matched_on_the_exact_ticket_number(self):
+        names = ["2026-10-29_2000_vue-lqorch-907.md", "2026-10-28_1000_fix-9070-autre.md",
+                 "2026-10-27_0900_907-premier-lot.md", "2026-10-26_0900_ticket-90.md"]
+        self.assertEqual(self.mod.reports_for(907, names),
+                         ["2026-10-29_2000_vue-lqorch-907.md", "2026-10-27_0900_907-premier-lot.md"])
+        self.assertEqual(self.mod.reports_for(0, names), [])
+
+    def test_cli_prints_and_writes(self):
+        out = self.cli("snapshot")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(json.loads(out.stdout)["version"], 1)
+        out = self.cli("snapshot", "--write")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertTrue((self.state / "queue.json").exists())

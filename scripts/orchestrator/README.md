@@ -17,6 +17,7 @@ enchaîne tant qu'il reste du travail éligible.
 | Consignes de session | `/opt/lodyquests-orch/session_prompt.md` |
 | Service | `lodyquests-orch.service` (systemd, utilisateur `ubuntu`) |
 | État durable | `~/.local/state/lodyquests-orch/state.db` (SQLite : tickets, sessions, événements, contrôle) |
+| Instantané de la file (#907) | `/var/lib/lodyquests-orch/queue.json`, lu par la page PlugAdmin `/orch` |
 | Journaux de session | `~/.local/state/lodyquests-orch/sessions/*.jsonl` |
 | Copie de travail des sessions | `/srv/rpgquest/wt-orch` (jamais l'arbre du propriétaire) |
 
@@ -42,6 +43,7 @@ lqorch auto                   # file automatique agent:auto (#836) : examen à b
 lqorch auto hold 54 "recette TC-327 E"   # ne jamais sélectionner seul ce ticket (même après un commentaire)
 lqorch auto release 54        # le libérer (repris à la prochaine activité GitHub du propriétaire)
 lqorch config set auto_select 0   # couper la sélection automatique (auto_comment 0 : sans commentaire GitHub)
+lqorch snapshot [--write]     # instantané lu par PlugAdmin (#907) : affiché, ou publié tout de suite
 lqorch log [13] / lqorch sessions
 sudo systemctl start|stop|status lodyquests-orch
 journalctl -u lodyquests-orch
@@ -77,6 +79,13 @@ journalctl -u lodyquests-orch
   3 tentatives — jamais de boucle.
 - **Limite du fournisseur** : lue dans les événements `rate_limit_event` de Claude Code ; aucune
   session n'est lancée avant l'heure de remise à zéro annoncée (+2 min). La tentative ne compte pas.
+- **Vue PlugAdmin (#907)** : le superviseur publie au plus une fois par minute (et à chaque début /
+  fin de session) un instantané JSON de la file — tickets, sessions récentes, dernier examen de la
+  file automatique avec ses motifs d'exclusion, état et prochain démarrage possible. Écriture
+  atomique, fichier `0644` hors du HOME (créé par `install.sh`), **aucun appel GitHub** de plus :
+  seul ce qui est déjà dans la base d'état y figure, sans chemin de journal, PID ni coût. Un échec
+  d'écriture n'arrête rien ; il est signalé une fois (`lqorch status`, événement). `LQ_SNAPSHOT`
+  change le chemin ; un `LQ_STATE_DIR` de test garde son instantané à côté de sa base.
 - **Surveillance** : session coupée après 75 min sans sortie ou 4 h au total (réglables).
 - **Disjoncteur** : après 4 sessions consécutives sans rapport (crash, erreur, délai dépassé), tous
   tickets confondus, le superviseur se met en PAUSE avec le motif ; `lqorch resume` le réarme.

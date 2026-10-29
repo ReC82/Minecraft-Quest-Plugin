@@ -3243,6 +3243,32 @@ Fiche utilisateur : `/docs/exploitation-serveur`. Configuration : `ops.rcon.<cib
 dans `control-panel.properties`, mot de passe **uniquement** depuis l'environnement
 (`RPGQUEST_RCON_PASSWORD_<CIBLE>`), jamais dans le dépôt.
 
+
+### File de développement lqorch dans PlugAdmin (issue #907, lecture seule)
+
+Page **`/orch`** (menu Administration → « File de développement », permission dédiée `ORCH_READ`,
+réservée au propriétaire par défaut, attribuable par groupe). Elle montre ce que fait le superviseur
+`lqorch` : état (actif / en pause / arrêté), session en cours, prochaine session possible ou motif
+d'attente, sessions du jour ; tickets **En cours**, **Prêts**, **En attente du propriétaire**,
+**Bloqués** (BLOCKED et FAILED) et **Terminés récemment** (15 derniers), chacun avec lien GitHub,
+priorité (`P0–P3` quand le label a été vu par la file automatique, sinon « prio N » locale),
+prochaine action, blocage, résumé, PR/branche, dernière session et rapports `docs/claude-reports/`
+qui citent le ticket ; dernier examen de la file automatique `agent:auto` avec les **admissibles**
+et les **écartés et leur motif** (« aucun admissible » est un état normal, pas une panne) ;
+20 dernières sessions. Filtres état / priorité / texte (formulaire GET, sans JavaScript).
+
+**Source unique** : l'instantané JSON publié par le superviseur
+(`/var/lib/lodyquests-orch/queue.json`, chemin `PLUGADMIN_LQORCH_SNAPSHOT` ou `orch.snapshot`
+côté panel, `LQ_SNAPSHOT` côté superviseur), réécrit au plus une fois par minute et à chaque début /
+fin de session. Le panel **n'appelle jamais GitHub** et ne relit le fichier que s'il a changé. Fichier
+absent, illisible ou invalide → bandeau rouge explicite, aucun ticket affiché plutôt qu'un état faux ;
+instantané de plus de 5 min → avertissement, plus de 15 min → « le superviseur ne publie plus ».
+L'instantané ne contient ni chemin de journal, ni PID de session, ni coût, ni secret.
+
+**Aucune action** : mettre un ticket de côté, le libérer, changer sa priorité ou lancer une session
+restent des commandes `lqorch` (`auto hold|release`, `add`, `set`) ; une éventuelle action depuis le
+panel devra être décidée à part (vérification serveur, confirmation, audit).
+
 ### Rechargement du contenu dans le runtime (issue #131)
 
 **Constat d'audit qui a tout décidé.** Les six registres (quêtes, stories, dialogues, PNJ, objets,

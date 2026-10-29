@@ -25,6 +25,9 @@ import java.util.function.UnaryOperator;
  */
 public final class PanelConfigLoader {
 
+    /** Issue #907 : chemin publié par {@code lqorch} installé par {@code scripts/orchestrator/install.sh}. */
+    public static final String DEFAULT_ORCH_SNAPSHOT = "/var/lib/lodyquests-orch/queue.json";
+
     private final UnaryOperator<String> env;
     private final Path explicitFile;
 
@@ -75,9 +78,13 @@ public final class PanelConfigLoader {
         String contentRepoDir = firstNonBlank(env.apply("PLUGADMIN_CONTENT_DIR"),
                 props.getProperty("content.repo-dir"), null);
 
+        // Issue #907 : instantané publié par le superviseur lqorch (scripts/orchestrator/install.sh).
+        String orchSnapshot = firstNonBlank(env.apply("PLUGADMIN_LQORCH_SNAPSHOT"),
+                props.getProperty("orch.snapshot"), DEFAULT_ORCH_SNAPSHOT);
+
         return new PanelConfig(port, bind, baseUrl, disabled, cookieSecure, ttl, idle, dbPath,
                 ownerUsername, ownerHash, secret, targets, defaultTargetId, agents, contentRepoDir,
-                readOps(props, targets));
+                readOps(props, targets), orchSnapshot);
     }
 
     /**

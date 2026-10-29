@@ -194,7 +194,7 @@ sur le compte, l'unicité de l'UUID restant). La liaison fournira l'identité de
 `profiles` (#54, 24/10/2026) : **tous** les joueurs au profil visible ayant de l'XP, une quête terminée ou une
 statistique (plafond 1 000, les plus fortes XP globales gardées au-delà) — plus seulement ceux d'un top 10. `stats` :
 totaux persistés depuis le début de leur journal (`statistics.catalog.metrics[].trackedSince`) de `ENTITY_KILL`,
-`BLOCK_BREAK`, `FISH_CAUGHT`, `WAYPOINT_DISCOVERED`, `CITY_DISCOVERED`, `WAYSTONE_DISCOVERED`, `STORY_COMPLETED`
+`BLOCK_BREAK`, `FISH_CAUGHT`, `ANIMAL_BRED`, `WAYPOINT_DISCOVERED`, `CITY_DISCOVERED`, `WAYSTONE_DISCOVERED`, `STORY_COMPLETED`
 (`StatisticsRepository.lifetimeTotals`, lecture asynchrone des tables existantes, aucun compteur parallèle) ; une
 métrique sans valeur pour le joueur est absente, jamais 0 inventé. La fiche `/joueurs/<pseudo>` les affiche
 (section « Statistiques », date de début de suivi). `ENTITY_KILL` y est **sans filtre** (« Créatures tuées, animaux
@@ -224,10 +224,11 @@ sa source. Ajouter une métrique = une entrée du catalogue et sa requête, sans
 | `ENTITY_KILL` (#57) | `stat_activity_log` : mob tué par un joueur, cible = type d'entité, variante = mob spécial ; filtrable `entity` / `special-mob` | season, event |
 | `FISH_CAUGHT` (#57) | `stat_activity_log` : prise de pêche, cible = matériau ; filtrable `item` | season, event |
 | `BLOCK_BREAK` (#734) | `stat_activity_log` : bloc cassé, cible = matériau ; filtrable `block` / `block-family` | season, event, catalogue |
+| `ANIMAL_BRED` (#734, 29/10) | `stat_activity_log` : petit né parce qu'un joueur a nourri ses parents (`EntityBreedEvent`), cible = type du petit ; filtrable `entity` | season, event, catalogue |
 | `QUEST_COMPLETION` (#734) | `stat_activity_log` : une ligne par complétion (quêtes répétables comprises), cible = id de quête ; filtrable `quest` | season, event, catalogue |
 | `WAYPOINT_DISCOVERED`, `CITY_DISCOVERED`, `WAYSTONE_DISCOVERED` (#734) | tables existantes `waypoint_discoveries`, `city_discoveries`, `waystone_discoveries` (`discovered_at`, une ligne par lieu et par joueur) | season, event, catalogue |
 | `STORY_COMPLETED` (#734) | `story_progress.state = COMPLETED`, daté par `updated_at` | season, event, catalogue |
-| temps de jeu, distance, crafts, succès… | **non mesurés** : listés comme « mesures pas encore suivies » (§9), jamais reconstitués | — |
+| temps de jeu, distance, crafts, tonte, succès… | **non mesurés** : listés comme « mesures pas encore suivies » (§9), jamais reconstitués | — |
 
 L'XP RPG (#183) n'est ni le niveau vanilla ni une statistique Minecraft. Une métrique sans journal
 horodaté est refusée sur une saison ou un événement (`statistics.yml` invalide) : on ne publie pas
@@ -543,6 +544,7 @@ période synthétique du moteur §4/§6 : même requête, mêmes ex aequo, même
 | `ENTITY_KILL` | `stat_activity_log` (#57) | créatif/spectateur, mode bypass admin, mob de test, de spawner ou issu d'une division, victime joueur (PvP) |
 | `BLOCK_BREAK` | `stat_activity_log` | bloc posé par un joueur (`PlacedBlockTracker`, vu en `HIGH` avant que l'XP de minage n'efface la marque), casse annulée par une protection, culture pas mûre, créatif, bypass |
 | `FISH_CAUGHT` | `stat_activity_log` (#57) | créatif, bypass |
+| `ANIMAL_BRED` | `stat_activity_log`, clé = UUID du petit (un rejeu ne compte qu'une fois) | naissance sans éleveur joueur (villageois, animaux apprivoisés laissés seuls), œuf d'apparition, créatif, bypass ; suivi à partir du déploiement, rien avant |
 | `QUEST_COMPLETION` | `stat_activity_log`, clé = jeton de complétion, écrite **après** l'enregistrement de la complétion | créatif, bypass ; une remise rejouée ne compte qu'une fois |
 | `WAYPOINT_DISCOVERED`, `CITY_DISCOVERED`, `WAYSTONE_DISCOVERED` | tables de découvertes, avec leur vraie date | revisiter un lieu (une ligne par lieu et par joueur) |
 | `STORY_COMPLETED` | `story_progress` | histoire non terminée |

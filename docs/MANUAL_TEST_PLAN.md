@@ -9402,6 +9402,20 @@ corbeille ; projet devenu posé non supprimable ; refus posé / publié / portai
 
 **Couverture automatisée** : `BoardCatalogExportTest#aSplitBoardPublishesOneRankingPerCreatureTypeActuallyKilled`, `#splitIsOnlyAcceptedForCreatureKills` ; `StatDimensionsTest#everyCountableCreatureHasAFrenchName` ; `CreatureBoardsPageTest` (6 tests : liste blanche, cartes et résumé, catégorie et recherche, périodes, lien depuis le catalogue, démo).
 
+### TC-443 — Classements d'élevage « Éleveurs de la semaine » et « Animaux élevés » (issue #734, lot du 29/10, PENDING MANUAL VALIDATION)
+
+**But** : un animal né parce qu'un joueur a nourri ses parents compte dans les deux nouveaux classements ; rien n'est compté avant la mise en ligne, ni en créatif.
+
+**Prérequis** : JAR, portail et PlugAdmin du lot `feature/734-elevage` en ligne ; accès bêta du portail. Uniquement ses propres animaux, en survie, bypass admin inactif.
+
+1. En survie, nourrir deux vaches (blé) pour obtenir un veau ; attendre le relevé suivant (15 min au plus).
+2. https://lodyquests.lodylands.com/classements → thème « Récolte ». **Attendu** : « Éleveurs de la semaine » et « Animaux élevés » avec « 1 animal » pour son pseudo (si le profil est visible), « suivi depuis » = date de mise en ligne, jamais une valeur antérieure.
+3. Passer en créatif, refaire naître un veau, revenir en survie, attendre le relevé. **Attendu** : compteur inchangé.
+4. Fiche `/joueurs/<pseudo>` → section « Statistiques ». **Attendu** : ligne « Animaux élevés ».
+5. PlugAdmin → Classements → Nouveau : la mesure « Animaux élevés (nourris par le joueur) » est proposée, filtrable par type d'animal (ex. `COW`).
+
+**Couverture automatisée** : `ActivityListenerTest#anAnimalBredByASurvivalPlayerIsJournaledOnceWithItsType`, `#breedingWithoutAPlayerOrInCreativeOrBypassNeverCounts` ; `BoardCatalogExportTest#theCatalogListsTrackedAndPlannedMetrics` ; `EventPageTest#breedingHasItsOwnLabelThemeAndSingular`.
+
 ### TC-439 — Version posée immuable : republier un bâtiment posé sans perdre la version en jeu (issue #644, exigence du 26/10, PENDING MANUAL VALIDATION)
 
 **Prérequis** : JAR et PlugAdmin issus de la branche `feature/644-immutable-used-versions`. **Uniquement**

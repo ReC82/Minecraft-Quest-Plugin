@@ -79,4 +79,13 @@ class EventPageTest {
         assertEquals("prises", StatLabels.unit("FISH_CAUGHT"));
         assertEquals("Annulé", StatLabels.status("CANCELLED"));
     }
+
+    @Test
+    void breedingHasItsOwnLabelThemeAndSingular() {
+        assertEquals("Animaux élevés", StatLabels.title("ANIMAL_BRED"));
+        assertEquals("recolte", StatLabels.category("ANIMAL_BRED"));
+        assertEquals("animal", StatLabels.unit("ANIMAL_BRED", 1L));
+        assertEquals("animaux", StatLabels.unit("ANIMAL_BRED", 3L));
+        assertEquals("quête", StatLabels.unit("QUEST_COMPLETION", 1L));
+    }
 }

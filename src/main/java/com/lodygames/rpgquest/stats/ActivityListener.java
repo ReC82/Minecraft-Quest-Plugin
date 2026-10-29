@@ -20,6 +20,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.entity.EntityBreedEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.player.PlayerFishEvent;
 import org.bukkit.plugin.Plugin;
@@ -39,7 +40,9 @@ import org.slf4j.Logger;
  *
  * <p>Issue #734 : blocs cassés ({@code BLOCK_BREAK}) — jamais un bloc posé par un joueur (anti-farm,
  * même règle que l'XP de minage), jamais une culture pas encore mûre, jamais une casse refusée par
- * une protection ; quêtes terminées ({@code QUEST_COMPLETION}), clé = jeton de complétion.</p>
+ * une protection ; quêtes terminées ({@code QUEST_COMPLETION}), clé = jeton de complétion ; animaux
+ * élevés ({@code ANIMAL_BRED}), seulement quand c'est un joueur éligible qui les a nourris, clé = UUID
+ * du petit.</p>
  */
 public final class ActivityListener implements Listener {
 
@@ -91,6 +94,20 @@ public final class ActivityListener implements Listener {
         record(new ActivityLogRepository.Activity("fish:" + event.getHook().getUniqueId(),
                 event.getPlayer().getUniqueId(), StatMetric.FISH_CAUGHT, caught.getItemStack().getType().name(),
                 null, 1, clock.instant()));
+    }
+
+    /**
+     * Élevage (#734) : un petit né parce qu'un joueur a nourri ses parents. Les naissances sans éleveur
+     * (villageois, animaux apprivoisés laissés seuls) et les œufs d'apparition ne passent pas par ici.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBreed(EntityBreedEvent event) {
+        if (!(event.getBreeder() instanceof Player breeder) || !eligible(breeder)) {
+            return;
+        }
+        LivingEntity child = event.getEntity();
+        record(new ActivityLogRepository.Activity("breed:" + child.getUniqueId(), breeder.getUniqueId(),
+                StatMetric.ANIMAL_BRED, child.getType().name(), null, 1, clock.instant()));
     }
 
     /** Issue #734 — sans lui, aucun bloc cassé n'est journalisé (un bloc posé ne doit jamais compter). */

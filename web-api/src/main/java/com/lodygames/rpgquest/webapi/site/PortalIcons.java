@@ -48,6 +48,7 @@ public final class PortalIcons {
             Map.entry("ENTITY_KILL", "skull"),
             Map.entry("FISH_CAUGHT", "fish"),
             Map.entry("BLOCK_BREAK", "pickaxe"),
+            Map.entry("ANIMAL_BRED", "grass"),
             Map.entry("WAYPOINT_DISCOVERED", "waypoint"),
             Map.entry("CITY_DISCOVERED", "map"),
             Map.entry("WAYSTONE_DISCOVERED", "waypoint"),

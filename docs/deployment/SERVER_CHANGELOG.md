@@ -49,6 +49,36 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-29 - Plugin + portail + PlugAdmin : classements d'élevage (#734, TC-443)
+
+### Changement
+
+Nouvelle mesure `ANIMAL_BRED` (animal né parce qu'un joueur a nourri ses parents, survie/aventure, hors bypass
+admin), journalisée dans `stat_activity_log` existant. Deux classements par défaut dans `stats/leaderboards.yml` du
+JAR : `breeding_week` et `breeding_total` (thème Récolte). Libellés et icône côté portail et PlugAdmin.
+
+### Action serveur
+
+Remplacer le JAR RPGQuest (aucune migration, aucune configuration à modifier ; un `statistics.yml` qui définit
+sa propre liste `leaderboards:` ne reçoit pas les deux nouveaux classements, ajoutables depuis PlugAdmin).
+Redéployer le portail (`web-api`) et PlugAdmin. Redémarrage du serveur Minecraft requis pour charger le JAR.
+Aucune valeur antérieure : le suivi commence au premier élevage après la mise en ligne.
+
+### Sauvegarde préalable
+
+JAR + `data.db` (script officiel) ; releases portail et PlugAdmin précédentes.
+
+### Validation
+
+TC-443 — PENDING MANUAL VALIDATION.
+
+### Rollback
+
+Redéployer le JAR précédent : les lignes `ANIMAL_BRED` déjà écrites restent dans `stat_activity_log` sans être
+lues (métrique inconnue) ; aucune donnée à nettoyer.
+
+---
+
 ## 2026-10-29 - PlugAdmin : corbeille réversible de l'Atelier et historique visible des suppressions (#881, TC-442)
 
 ### Changement

@@ -81,6 +81,8 @@ public record StatMetric(String id, Aggregation aggregation, SortOrder order, Se
     public static final String FISH_CAUGHT = "FISH_CAUGHT";
     /** Bloc cassé (#734) : cible = matériau. Blocs posés par un joueur, casses refusées et créatif exclus. */
     public static final String BLOCK_BREAK = "BLOCK_BREAK";
+    /** Animal élevé par un joueur (#734) : cible = type du petit. Naissances sans éleveur joueur exclues. */
+    public static final String ANIMAL_BRED = "ANIMAL_BRED";
     /** Quête terminée pendant la fenêtre (#734) : une ligne par complétion, quêtes répétables comprises. */
     public static final String QUEST_COMPLETION = "QUEST_COMPLETION";
     /** Waypoints découverts (#734), lus dans {@code waypoint_discoveries} : revenir au même ne compte pas. */
@@ -153,6 +155,7 @@ public record StatMetric(String id, Aggregation aggregation, SortOrder order, Se
                 Map.of("entity", "target", "entity-family", "target", "special-mob", "variant")));
         catalog.put(FISH_CAUGHT, activity(FISH_CAUGHT, Map.of("item", "target")));
         catalog.put(BLOCK_BREAK, activity(BLOCK_BREAK, Map.of("block", "target", "block-family", "target")));
+        catalog.put(ANIMAL_BRED, activity(ANIMAL_BRED, Map.of("entity", "target")));
         catalog.put(QUEST_COMPLETION, activity(QUEST_COMPLETION, Map.of("quest", "target")));
         catalog.put(WAYPOINT_DISCOVERED, discovery(WAYPOINT_DISCOVERED, "waypoint_discoveries"));
         catalog.put(CITY_DISCOVERED, discovery(CITY_DISCOVERED, "city_discoveries"));
@@ -175,7 +178,7 @@ public record StatMetric(String id, Aggregation aggregation, SortOrder order, Se
         planned.put("DISTANCE_TRAVELED", "Distance parcourue (marche, nage, vol) : pas encore mesurée.");
         planned.put("PLAY_TIME", "Temps de jeu et jours actifs : pas encore mesurés.");
         planned.put("ITEM_CRAFTED", "Objets fabriqués et cuissons : pas encore journalisés pour les classements.");
-        planned.put("ANIMAL_BRED", "Élevage et tonte : pas encore mesurés.");
+        planned.put("ANIMAL_SHEARED", "Tonte : pas encore mesurée (l'élevage, lui, est suivi).");
         planned.put("BIOME_VISITED", "Biomes visités : seuls les waypoints découverts (un par zone de biome) sont suivis.");
         planned.put("STRUCTURE_VISITED", "Structures visitées : aucun événement fiable pour l'instant.");
         planned.put("ACHIEVEMENT", "Succès et défis : aucun système de succès RPGQuest pour l'instant.");

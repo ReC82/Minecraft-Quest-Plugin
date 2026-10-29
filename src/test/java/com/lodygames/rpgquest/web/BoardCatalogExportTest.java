@@ -115,6 +115,8 @@ class BoardCatalogExportTest {
         Map<String, Object> fish = metrics.stream().filter(m -> m.get("id").equals(StatMetric.FISH_CAUGHT)).findFirst().orElseThrow();
         assertNull(fish.get("trackedSince"));
         assertTrue(((List<?>) exported.get("planned")).toString().contains("PLAY_TIME"));
+        assertTrue(metrics.stream().anyMatch(m -> m.get("id").equals(StatMetric.ANIMAL_BRED)), "élevage suivi (#734)");
+        assertFalse(((List<?>) exported.get("planned")).toString().contains(StatMetric.ANIMAL_BRED));
         Map<String, Object> families = (Map<String, Object>) exported.get("families");
         assertTrue(families.get("entity-family").toString().contains("zombies"));
         assertTrue(families.get("block-family").toString().contains("ores"));

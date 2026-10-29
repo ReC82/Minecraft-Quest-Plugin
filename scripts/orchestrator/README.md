@@ -62,7 +62,7 @@ journalctl -u lodyquests-orch
     FAILED (relance manuelle `lqorch add`) ; retenues par `lqorch auto hold` ;
   - **déjà traitées ici** (DONE / WAITING_OWNER / BLOCKED) **sans activité nouvelle du
     propriétaire** : seul un commentaire GitHub postérieur à la dernière prise en compte, posté hors
-    de toute fenêtre de session (+5 min) et sans le marqueur `<!-- lqorch`, réarme le ticket. Les
+    d'une session de CE ticket (+5 min) et sans le marqueur `<!-- lqorch`, réarme le ticket. Les
     rapports des sessions ne relancent donc jamais leur propre ticket (pas de boucle) ;
   - PR ouverte sur une branche `…/N-…` (travail concurrent) ;
   - dépendances ouvertes : colonne `deps` locale + lignes « Dépend de / Bloqué par / Prérequis /

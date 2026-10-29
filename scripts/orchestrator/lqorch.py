@@ -94,6 +94,12 @@ SETTINGS = {
                      "Signaler par un commentaire GitHub chaque prise en charge automatique. 0 = journal local seul."),
 }
 
+# Instantané lu par PlugAdmin (#907) : hors du HOME (illisible pour l'utilisateur plugadmin). Un
+# STATE_DIR de test garde son instantané à côté de lui : jamais celui du superviseur réel.
+SNAPSHOT_PATH = Path(os.environ.get("LQ_SNAPSHOT") or (
+    STATE_DIR / "queue.json" if os.environ.get("LQ_STATE_DIR") else "/var/lib/lodyquests-orch/queue.json"))
+SNAPSHOT_EVERY_SECONDS = int(os.environ.get("LQ_SNAPSHOT_EVERY", 60))
+SNAPSHOT_VERSION = 1
 STATUSES = ("READY", "RUNNING", "TESTING", "BLOCKED", "WAITING_OWNER", "DONE", "FAILED")
 # Pseudo-ticket : une session qui relit le backlog et remplit la file quand elle est vide.
 TRIAGE = 0
@@ -361,15 +367,16 @@ def auto_candidates(con, dry=False):
             continue
         n, title = it["number"], it.get("title", "")
         labels = {lab.get("name") for lab in it.get("labels", [])}
+        ranks = sorted(PRIORITY_LABELS[lab] for lab in labels if lab in PRIORITY_LABELS)
 
         def skip(reason):
-            excluded.append(dict(issue=n, title=title, reason=reason))
+            # Le rang P0–P3 accompagne le motif quand il est connu : la vue PlugAdmin (#907) filtre dessus.
+            excluded.append(dict(issue=n, title=title, reason=reason, rank=ranks[0] if len(ranks) == 1 else None))
 
         if AUTO_LABEL not in labels:
             skip(f"sans label {AUTO_LABEL}")
             continue
 
-        ranks = sorted(PRIORITY_LABELS[lab] for lab in labels if lab in PRIORITY_LABELS)
         if len(ranks) != 1:
             skip("aucun label priority:P0…P3" if not ranks else "plusieurs labels priority:P*")
             continue
@@ -588,6 +595,7 @@ def run_session(con, t):
     update_task(con, t["issue"], status="RUNNING", last_session=session_id, last_activity=iso(),
                 attempts=t["attempts"] + 1)
     event(con, t["issue"], "session_start", f"Session {session_id} (tentative {t['attempts'] + 1})")
+    write_snapshot(con, force=True)
     env = dict(os.environ, LQ_SESSION_ID=session_id, LQ_STATUS_FILE=str(status_file), LQ_ISSUE=str(t["issue"]))
     cmd = [CLAUDE, "-p", prompt, "--output-format", "stream-json", "--verbose",
            "--dangerously-skip-permissions", "--session-id", session_id]
@@ -640,6 +648,7 @@ def run_session(con, t):
             log.flush()
             if time.time() - last_out < 5:
                 update_task(con, t["issue"], last_activity=iso())
+            write_snapshot(con)
             if finished:
                 proc.wait()
                 break
@@ -678,6 +687,7 @@ def run_session(con, t):
     apply_outcome(con, t["issue"], outcome, detail, reset, report)
     # L'activité GitHub de la session (rapport, commentaires) ne doit pas réarmer le ticket (#836).
     update_task(con, t["issue"], auto_seen_at=iso())
+    write_snapshot(con, force=True)
     return outcome
 
 
@@ -792,6 +802,112 @@ def code_version():
     return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()[:12]
 
 
+# ---------------------------------------------------------------- instantané PlugAdmin (#907)
+
+def clip(text, limit):
+    text = " ".join((text or "").split())
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def report_index():
+    """Noms des rapports de session du dossier docs/claude-reports de la copie de travail."""
+    folder = WORKDIR / "docs/claude-reports"
+    try:
+        return sorted((p.name for p in folder.glob("20*.md")), reverse=True)
+    except OSError:
+        return []
+
+
+def reports_for(issue, names):
+    """Les trois rapports les plus récents dont la description (après « AAAA-MM-JJ_HHMM_ ») cite le ticket."""
+    if not issue:
+        return []
+    pattern = re.compile(rf"(?<![0-9]){issue}(?![0-9])")
+    return [n for n in names if pattern.search(n[16:])][:3]
+
+
+def snapshot(con):
+    """État de la file pour la vue PlugAdmin, en lecture seule. Aucune donnée qui n'est pas déjà dans la
+    base d'état : ni appel GitHub, ni chemin de journal, ni PID de session, ni réglage d'environnement."""
+    pid = ctl_get(con, "supervisor_pid")
+    cur = con.execute("SELECT * FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1").fetchone()
+    blocker = start_blocker(con)
+    try:
+        auto = json.loads(ctl_get(con, "auto_last") or "{}")
+    except json.JSONDecodeError:
+        auto = {}
+    names = report_index()
+    titles = {}
+    tasks = []
+    for t in con.execute("SELECT * FROM tasks ORDER BY issue"):
+        titles[t["issue"]] = t["title"] or ""
+        tasks.append(dict(
+            issue=t["issue"], title=clip(t["title"], 200), status=t["status"], priority=t["priority"],
+            deps=t["deps"] or "", branch=t["branch"] or "", pr=t["pr"] or "", commit_sha=(t["commit_sha"] or "")[:12],
+            summary=clip(t["summary"], 600), tests=clip(t["tests"], 300), blockers=clip(t["blockers"], 400),
+            next_action=clip(t["next_action"], 500), note=clip(t["note"], 300), attempts=t["attempts"],
+            last_session=(t["last_session"] or "")[:8], last_activity=t["last_activity"] or "",
+            not_before=t["not_before"] or "", updated_at=t["updated_at"] or "", auto_hold=bool(t["auto_hold"]),
+            auto_seen_at=t["auto_seen_at"] or "", reports=reports_for(t["issue"], names)))
+    sessions = [dict(id=s["id"][:8], issue=s["issue"], title=clip(titles.get(s["issue"], ""), 120),
+                     started_at=s["started_at"] or "", ended_at=s["ended_at"] or "", outcome=s["outcome"] or "",
+                     detail=clip(s["detail"], 300))
+                for s in con.execute("SELECT * FROM sessions ORDER BY started_at DESC LIMIT 40")]
+    cap = setting(con, "max_sessions_per_day")[0]
+    return dict(
+        version=SNAPSHOT_VERSION, generated_at=iso(), repo=REPO,
+        supervisor=dict(mode=ctl_get(con, "mode", "RUNNING"), alive=bool(pid) and Path(f"/proc/{pid}").exists(),
+                        code=ctl_get(con, "supervisor_version"), started_at=ctl_get(con, "supervisor_started"),
+                        idle_reason=ctl_get(con, "idle_reason"),
+                        reload_requested=bool(ctl_get(con, "reload_requested")),
+                        next_start=dict(allowed=blocker is None, reason=blocker[0] if blocker else "",
+                                        until=blocker[1] if blocker else ""),
+                        sessions_today=sessions_today(con), max_sessions_per_day=cap),
+        current=dict(issue=cur["issue"], title=clip(titles.get(cur["issue"], ""), 200), started_at=cur["started_at"],
+                     last_activity=(task(con, cur["issue"]) or {"last_activity": ""})["last_activity"] or "")
+        if cur else None,
+        auto=dict(enabled=bool(setting(con, "auto_select")[0]), examined_at=auto.get("at", ""),
+                  eligible=[dict(issue=e.get("issue"), title=clip(e.get("title"), 200), rank=e.get("rank"),
+                                 rearm=e.get("rearm", ""), status=e.get("status", ""))
+                            for e in auto.get("eligible", [])],
+                  excluded=[dict(issue=e.get("issue"), title=clip(e.get("title"), 200), rank=e.get("rank"),
+                                 reason=clip(e.get("reason"), 300))
+                            for e in auto.get("excluded", [])]),
+        tasks=tasks, sessions=sessions)
+
+
+_last_snapshot = 0.0
+
+
+def write_snapshot(con, force=False):
+    """Publie l'instantané (écriture atomique, lisible par PlugAdmin) au plus une fois par minute, sauf
+    `force`. Un échec n'arrête jamais le superviseur : il est noté une fois dans `snapshot_error`."""
+    global _last_snapshot
+    if not force and time.time() - _last_snapshot < SNAPSHOT_EVERY_SECONDS:
+        return False
+    _last_snapshot = time.time()
+    tmp = SNAPSHOT_PATH.with_name(f".{SNAPSHOT_PATH.name}.{os.getpid()}.tmp")
+    try:
+        data = json.dumps(snapshot(con), ensure_ascii=False, indent=1)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(data)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, SNAPSHOT_PATH)
+    except (OSError, sqlite3.Error) as exc:
+        error = f"{SNAPSHOT_PATH} : {exc.__class__.__name__} {exc}"
+        if ctl_get(con, "snapshot_error") != error:
+            ctl_set(con, "snapshot_error", error)
+            event(con, None, "supervisor", f"Instantané PlugAdmin non publié — {error}")
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return False
+    if ctl_get(con, "snapshot_error"):
+        ctl_set(con, "snapshot_error", "")
+    return True
+
+
 def reexec(con):
     """Recharge le code installé dans le même processus (même PID pour systemd). Appelé seulement
     entre deux sessions ; le verrou est libéré par l'exec (descripteur non hérité) puis repris."""
@@ -826,10 +942,12 @@ def supervise():
             ctl_set(con, "provider_usage", json.dumps(usage, ensure_ascii=False))
     event(con, None, "supervisor", f"Superviseur démarré (code {code_version()}).")
     while True:
+        write_snapshot(con)
         mode = ctl_get(con, "mode", "RUNNING")
         if mode in ("STOP", "STOP_NOW"):
             event(con, None, "supervisor", "Arrêt demandé : superviseur arrêté.")
             ctl_set(con, "supervisor_pid", "")
+            write_snapshot(con, force=True)
             return 0
         if ctl_get(con, "reload_requested"):
             reexec(con)
@@ -924,6 +1042,8 @@ def cmd_status(con, _):
     else:
         print("Fournisseur : aucune donnée de quota observée (rien n'est déduit de l'interface claude.ai).")
     print(auto_summary(con))
+    if ctl_get(con, "snapshot_error"):
+        print(f"⚠ Vue PlugAdmin (#907) : instantané non publié — {ctl_get(con, 'snapshot_error')}")
     counts = con.execute("SELECT status, COUNT(*) c FROM tasks GROUP BY status").fetchall()
     print("Tickets : " + ", ".join(f"{r['status']} {r['c']}" for r in counts))
     print("Réglages : lqorch config")
@@ -983,6 +1103,16 @@ def cmd_auto(con, args):
     print("Écartés :")
     for e in sorted(excluded, key=lambda x: x["issue"] or 0):
         print(f"  #{e['issue']} {e['title'][:50]} — {e['reason']}")
+    return 0
+
+
+def cmd_snapshot(con, args):
+    """Instantané de la vue PlugAdmin (#907) : affiché, ou publié avec --write (sans attendre le superviseur)."""
+    if args.write:
+        ok = write_snapshot(con, force=True)
+        print(f"Instantané publié : {SNAPSHOT_PATH}" if ok else f"Échec : {ctl_get(con, 'snapshot_error')}")
+        return 0 if ok else 1
+    print(json.dumps(snapshot(con), ensure_ascii=False, indent=1))
     return 0
 
 
@@ -1122,6 +1252,8 @@ def main():
     s.add_argument("action", nargs="?", choices=("show", "hold", "release"), default="show")
     s.add_argument("issue", type=int, nargs="?")
     s.add_argument("reason", nargs="?", default="")
+    s = sub.add_parser("snapshot")
+    s.add_argument("--write", action="store_true")
     s = sub.add_parser("log")
     s.add_argument("issue", type=int, nargs="?")
     args = p.parse_args()
@@ -1132,7 +1264,8 @@ def main():
         p.error("usage : lqorch config [show | set NOM VALEUR | unset NOM]")
     code = {"status": cmd_status, "queue": cmd_queue, "pause": cmd_mode, "resume": cmd_mode, "stop": cmd_mode,
             "skip": cmd_skip, "add": cmd_add, "set": cmd_set, "log": cmd_log, "sessions": cmd_sessions,
-            "config": cmd_config, "reload": cmd_reload, "auto": cmd_auto}[args.cmd](con, args)
+            "config": cmd_config, "reload": cmd_reload, "auto": cmd_auto,
+            "snapshot": cmd_snapshot}[args.cmd](con, args)
     sys.exit(code or 0)
 
 

@@ -39,7 +39,7 @@ public final class LeaderboardForm {
     static final int MAX_TARGETS = 64;
     /** Clé de filtre des cibles exactes selon la mesure ; absente = la mesure ne se filtre pas ainsi. */
     public static final Map<String, String> EXACT_KEYS = Map.of("ENTITY_KILL", "entity", "BLOCK_BREAK", "block",
-            "FISH_CAUGHT", "item", "QUEST_COMPLETION", "quest");
+            "FISH_CAUGHT", "item", "QUEST_COMPLETION", "quest", "ANIMAL_BRED", "entity");
     /** Clé de filtre des familles selon la mesure. */
     public static final Map<String, String> FAMILY_KEYS = Map.of("ENTITY_KILL", "entity-family",
             "BLOCK_BREAK", "block-family");

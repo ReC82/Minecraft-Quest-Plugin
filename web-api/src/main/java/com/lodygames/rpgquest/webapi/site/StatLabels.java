@@ -43,7 +43,8 @@ public final class StatLabels {
         return switch (metric) {
             case "RPG_XP_GLOBAL", "QUESTS_COMPLETED", "QUEST_COMPLETION", "STORY_COMPLETED" -> "aventure";
             case "RPG_XP_COMBAT", "ENTITY_KILL" -> "combat";
-            case "RPG_XP_MINING", "RPG_XP_FARMING", "RPG_XP_FISHING", "FISH_CAUGHT", "BLOCK_BREAK" -> "recolte";
+            case "RPG_XP_MINING", "RPG_XP_FARMING", "RPG_XP_FISHING", "FISH_CAUGHT", "BLOCK_BREAK",
+                 "ANIMAL_BRED" -> "recolte";
             case "RPG_XP_EXPLORATION", "WAYPOINT_DISCOVERED", "CITY_DISCOVERED", "WAYSTONE_DISCOVERED" -> "exploration";
             default -> "autres";
         };
@@ -61,6 +62,7 @@ public final class StatLabels {
         }
         String catalogTitle = switch (metric) {
             case "BLOCK_BREAK" -> "Blocs cassés";
+            case "ANIMAL_BRED" -> "Animaux élevés";
             case "QUEST_COMPLETION" -> "Quêtes terminées (par période)";
             case "WAYPOINT_DISCOVERED" -> "Waypoints découverts";
             case "CITY_DISCOVERED" -> "Villes découvertes";
@@ -87,6 +89,7 @@ public final class StatLabels {
             case CreatureBoardsPage.UNIT_METRIC -> "créatures";
             case "FISH_CAUGHT" -> "prises";
             case "BLOCK_BREAK" -> "blocs";
+            case "ANIMAL_BRED" -> "animaux";
             case "WAYPOINT_DISCOVERED" -> "waypoints";
             case "CITY_DISCOVERED" -> "villes";
             case "WAYSTONE_DISCOVERED" -> "pierres";
@@ -95,11 +98,16 @@ public final class StatLabels {
         };
     }
 
-    /** Unité accordée à la valeur : « 1 quête », « 2 quêtes » (les unités du catalogue sont des pluriels en -s). */
+    /** Unité accordée à la valeur : « 1 quête », « 2 quêtes », « 1 animal » (pluriels en -s, sauf « animaux »). */
     public static String unit(String metric, Object value) {
         String unit = unit(metric);
-        return value instanceof Number number && Math.abs(number.longValue()) <= 1 && unit.endsWith("s")
-                ? unit.substring(0, unit.length() - 1) : unit;
+        if (!(value instanceof Number number) || Math.abs(number.longValue()) > 1) {
+            return unit;
+        }
+        if (unit.equals("animaux")) {
+            return "animal";
+        }
+        return unit.endsWith("s") ? unit.substring(0, unit.length() - 1) : unit;
     }
 
     /**

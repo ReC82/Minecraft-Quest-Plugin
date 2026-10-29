@@ -23,6 +23,7 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.event.entity.EntityBreedEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.persistence.PersistentDataType;
 import org.junit.jupiter.api.AfterEach;
@@ -159,6 +160,36 @@ class ActivityListenerTest {
         PlayerMock victim = server.addPlayer();
         victim.setKiller(killer);
         die(victim);
+
+        assertEquals(List.of(), journal());
+    }
+
+    private void breed(org.bukkit.entity.LivingEntity breeder) {
+        LivingEntity mother = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 0), EntityType.COW);
+        LivingEntity father = (LivingEntity) world.spawnEntity(new Location(world, 1, 64, 0), EntityType.COW);
+        LivingEntity child = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 1), EntityType.COW);
+        EntityBreedEvent event = new EntityBreedEvent(child, mother, father, breeder,
+                new org.bukkit.inventory.ItemStack(org.bukkit.Material.WHEAT), 1);
+        listener.onBreed(event);
+        listener.onBreed(event); // événement rejoué : même petit, même clé
+    }
+
+    @Test
+    void anAnimalBredByASurvivalPlayerIsJournaledOnceWithItsType() throws Exception {
+        breed(killer);
+
+        assertEquals(List.of("ANIMAL_BRED:COW"), journal());
+    }
+
+    @Test
+    void breedingWithoutAPlayerOrInCreativeOrBypassNeverCounts() throws Exception {
+        breed(null);
+        killer.setGameMode(GameMode.CREATIVE);
+        breed(killer);
+        killer.setGameMode(GameMode.SURVIVAL);
+        killer.setOp(true);
+        assertEquals(AdminBypassMode.Outcome.ENABLED, bypass.enable(killer));
+        breed(killer);
 
         assertEquals(List.of(), journal());
     }

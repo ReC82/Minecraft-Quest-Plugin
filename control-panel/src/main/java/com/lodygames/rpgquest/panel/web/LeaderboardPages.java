@@ -655,6 +655,7 @@ public final class LeaderboardPages {
         m.put("ENTITY_KILL", new String[] {"Monstres et créatures vaincus", "skull"});
         m.put("BLOCK_BREAK", new String[] {"Blocs cassés (minage, bûcheronnage, récoltes)", "pickaxe"});
         m.put("FISH_CAUGHT", new String[] {"Prises de pêche", "fish"});
+        m.put("ANIMAL_BRED", new String[] {"Animaux élevés (nourris par le joueur)", "grass"});
         m.put("QUEST_COMPLETION", new String[] {"Quêtes terminées pendant la période", "scroll"});
         m.put("QUESTS_COMPLETED", new String[] {"Quêtes terminées depuis toujours", "scroll"});
         m.put("STORY_COMPLETED", new String[] {"Histoires terminées", "scroll"});

@@ -74,7 +74,7 @@ public final class WebSnapshotWriter implements PluginService {
      * {@code quest_progress} et l'XP de {@code player_skills} : ni l'une ni l'autre n'est recomptée ici.
      */
     static final List<String> PROFILE_METRICS = List.of(StatMetric.ENTITY_KILL, StatMetric.BLOCK_BREAK,
-            StatMetric.FISH_CAUGHT, StatMetric.WAYPOINT_DISCOVERED, StatMetric.CITY_DISCOVERED,
+            StatMetric.FISH_CAUGHT, StatMetric.ANIMAL_BRED, StatMetric.WAYPOINT_DISCOVERED, StatMetric.CITY_DISCOVERED,
             StatMetric.WAYSTONE_DISCOVERED, StatMetric.STORY_COMPLETED);
 
     private final Plugin plugin;

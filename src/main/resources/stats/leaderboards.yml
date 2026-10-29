@@ -44,6 +44,11 @@ leaderboards:
   - {id: crops_week, name: "Récoltes de la semaine", category: recolte, icon: bread, metric: BLOCK_BREAK,
      filter: {block-family: [crops]}, period: weekly}
   - {id: fish_week, name: "Pêcheurs de la semaine", category: recolte, metric: FISH_CAUGHT, period: weekly}
+  # Élevage : un petit né parce qu'un joueur a nourri ses parents (survie, hors mode bypass admin)
+  - {id: breeding_week, name: "Éleveurs de la semaine", category: recolte, icon: grass, metric: ANIMAL_BRED,
+     period: weekly}
+  - {id: breeding_total, name: "Animaux élevés", category: recolte, icon: grass, metric: ANIMAL_BRED,
+     period: lifetime}
   # --- Exploration (tables de découvertes existantes, avec leur vraie date)
   - {id: waypoints_total, name: "Waypoints découverts", category: exploration, metric: WAYPOINT_DISCOVERED,
      period: lifetime, featured: true}

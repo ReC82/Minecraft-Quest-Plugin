@@ -690,6 +690,9 @@ a.home-tile:hover .home-tile-cta{opacity:1}
   font-size:13px;font-weight:700;color:var(--primary)}
 .notif-foot:hover{text-decoration:none;background:var(--surface-3)}
 .notif-foot .bi{font-size:14px}
+/* #881 (TC-442) : opérations du panel seul (Atelier), hors du flux des actions agent */
+.notif-panel-ops{border-top:1px solid var(--line)}
+.notif-sub{margin:0;padding:10px 16px 6px;font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.04em;color:var(--txt-2);background:var(--surface-2)}
 
 /* -- Badges statut / domaine (icône + texte) -- */
 .badge.pa-status,.badge.pa-domain{display:inline-flex;align-items:center;gap:4px;font-weight:650}

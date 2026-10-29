@@ -9387,6 +9387,31 @@ définitive confirmée, seconds clics, historique visible avec refus et acteur ;
 corbeille ; projet devenu posé non supprimable ; refus posé / publié / portail / incertain / en attente / rôle),
 `WorkshopProjectDeletionTest` (4), `WorkshopTrashPagesTest` (2 : origine distincte de l'usage).
 
+### TC-444 — Atelier : corbeille et suppression visibles dans la cloche et l'Historique (issue #881, retour TC-442 du 29/10, PENDING MANUAL VALIDATION)
+
+**Cause établie (lecture seule, copie de la base live du 29/10 17:56)** : les deux gestes du propriétaire sont bien
+dans `audit_log` — `building.project.trash` 16:50:48 UTC et `building.project.delete` 16:51:30 UTC, acteur
+`owner`, résultat `OK`, projet « TEST #747d cabane (ne pas utiliser) » `test_cabane_747d` — comme celle
+d'`essai_881` (13:15:37). L'exécution n'a pas échoué et l'audit n'a rien perdu. Mais la cloche et l'onglet par
+défaut « Tous » de `/actions` ne lisent que les actions agent (`agent_action`) : une opération du panel seul n'y
+apparaît jamais, elle n'est que dans l'onglet séparé « Opérations du panel ».
+
+**Prérequis** : PlugAdmin issu de `fix/881-retour-operations-panel` (déploiement à autoriser), compte
+Propriétaire. **Lecture seule** : aucune création, corbeille ni suppression n'est nécessaire.
+
+1. N'importe quelle page → cloche. **Attendu** : sous « Dernières actions », une section « Opérations du panel
+   (Atelier) » : « Supprimé définitivement TEST #747d cabane (ne pas utiliser) » puis « Mis à la corbeille … »,
+   « Fait », l'heure relative, `owner` ; lien « Voir les opérations du panel ».
+2. Ce lien. **Attendu** : `/actions`, onglet « Opérations du panel » actif, les deux lignes de 16:50/16:51 UTC
+   (17:50/17:51 heure de Paris) et celle d'`essai_881`.
+3. `/actions` (onglet « Tous »). **Attendu** : bandeau bleu « Les opérations de l'Atelier … ne figurent pas dans
+   cette liste. Dernière : Supprimé définitivement « TEST #747d cabane (ne pas utiliser) » … » + lien.
+4. Mobile (390 px) : la section de la cloche reste lisible.
+
+**Couverture automatisée** : `WorkshopProjectCleanup881Test#aTrashThenDeletionIsVisibleInTheBellAndFromTheDefaultHistoryTab`
+(aucune section sans opération ; une création seule ne sonne pas la cloche ; message de succès qui donne le
+chemin ; section hors de `data-notif-list`, la plus récente d'abord ; bandeau de l'onglet « Tous »).
+
 ### TC-437 — Classements par type de créature sur le portail bêta (issue #734, PENDING MANUAL VALIDATION)
 
 **But** : chaque créature réellement tuée (zombie, squelette, araignée…) a son propre classement, distinct du cumul « Monstres » ; un mob spécial RPGQuest a le sien, séparé de sa créature de base ; rien n'est inventé pour les types jamais tués.

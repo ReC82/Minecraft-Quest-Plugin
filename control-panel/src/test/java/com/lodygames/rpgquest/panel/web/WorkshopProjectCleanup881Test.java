@@ -143,7 +143,7 @@ class WorkshopProjectCleanup881Test {
         assertEquals(1, drafts().forProject(TestConfig.AGENT_ID, pid).size(), "versions conservées");
         assertEquals(1, new ReferenceImageStore(dbPath).list(pid).size(), "images conservées");
         String list = get("/buildings/workshop").body();
-        assertFalse(list.contains("Essai jetable"), "hors de la liste principale");
+        assertFalse(main(list).contains("Essai jetable"), "hors de la liste principale (la cloche le signale)");
         assertTrue(list.contains("Corbeille (1)") && list.contains("1 projet(s)"), excerpt(list));
         assertTrue(location(get(project)).startsWith("/buildings/workshop/trash"), "la fiche renvoie à la corbeille");
         String again = decoded(location(post("/buildings/workshop/project", "_csrf=" + csrf(page)
@@ -195,6 +195,52 @@ class WorkshopProjectCleanup881Test {
         assertTrue(history.contains("Recopiez l") && history.contains(TestConfig.OWNER_USERNAME), "le refus et l'acteur");
         assertTrue(history.contains("Autre projet") && history.contains("Ouvrir"), "lien vers un projet existant");
         assertTrue(get("/actions?status=panel&domain=all&q=corbeille").body().contains("Mis à la corbeille"));
+    }
+
+    /**
+     * TC-442 (retour du 29/10) : une corbeille puis une suppression définitive étaient bien journalisées,
+     * mais invisibles dans la cloche et dans l'onglet « Tous » de l'Historique, qui ne lisent que les
+     * actions agent. Elles s'y signalent désormais, avec le chemin exact de l'onglet qui les liste.
+     */
+    @Test
+    void aTrashThenDeletionIsVisibleInTheBellAndFromTheDefaultHistoryTab() throws Exception {
+        start();
+        sites("");
+        String home = get("/buildings/workshop").body();
+        assertFalse(home.contains("Opérations du panel (Atelier)"), "aucune section sans opération");
+        assertFalse(get("/actions").body().contains("ne figurent pas dans cette liste"), "aucun bandeau sans opération");
+        createProject("Projet gardé", "Une création seule.", "projet_garde");
+        assertFalse(get("/buildings/workshop").body().contains("Opérations du panel (Atelier)"),
+                "une création seule ne sonne pas la cloche");
+
+        String project = createProject("Cabane de test", "Un essai.", "cabane_test");
+        String pid = id(project);
+        String page = get(project).body();
+        String trashed = decoded(location(post("/buildings/workshop/project", "_csrf=" + csrf(page)
+                + "&_action=project_trash&id=" + pid + "&project_version=" + version(section(page, "id=\"supprimer\"")))));
+        assertTrue(trashed.contains("Historique › onglet « Opérations du panel »"), trashed);
+        String bin = get("/buildings/workshop/trash").body();
+        String done = decoded(location(post("/buildings/workshop/trash", "_csrf=" + csrf(bin)
+                + "&_action=project_delete&id=" + pid + "&project_version=" + version(trashItem(bin, pid))
+                + "&confirm=yes&confirm_id=cabane_test")));
+        assertTrue(done.contains("supprimé définitivement") && done.contains("Opérations du panel"), done);
+
+        // La cloche : section à part, hors de la liste réécrite par panel.js, plus récente d'abord.
+        String full = get("/buildings/workshop").body();
+        int at = full.indexOf("class=\"notif-panel-ops\"");
+        assertTrue(at > 0 && at > full.indexOf("data-notif-list"), excerpt(full));
+        String bell = full.substring(at, full.indexOf("</section>", at));
+        assertTrue(bell.contains("Opérations du panel (Atelier)") && bell.contains("Cabane de test")
+                && bell.contains(TestConfig.OWNER_USERNAME), bell);
+        assertTrue(bell.indexOf("Supprimé définitivement") < bell.indexOf("Mis à la corbeille"), bell);
+        assertTrue(bell.contains("href=\"" + ActionsPages.PANEL_OPERATIONS_URL.replace("&", "&amp;") + "\"")
+                || bell.contains("href=\"" + ActionsPages.PANEL_OPERATIONS_URL + "\""), bell);
+
+        // L'Historique par défaut dit où regarder, avec la dernière opération.
+        String history = get("/actions").body();
+        assertTrue(history.contains("ne figurent pas dans cette liste")
+                && history.contains("Supprimé définitivement « Cabane de test »")
+                && history.contains("Voir les opérations du panel (4)"), excerpt(history));
     }
 
     @Test
@@ -412,6 +458,13 @@ class WorkshopProjectCleanup881Test {
         int open = page.lastIndexOf("ws-card", at);
         int close = page.indexOf("</div></div>", at);
         return page.substring(open, close);
+    }
+
+    /** Le contenu de la page, sans la barre du haut (la cloche y signale les dernières opérations). */
+    private static String main(String page) {
+        int at = page.indexOf("<main class=\"main\">");
+        assertTrue(at > 0, excerpt(page));
+        return page.substring(at, page.indexOf("</main>", at));
     }
 
     private static String section(String page, String marker) {

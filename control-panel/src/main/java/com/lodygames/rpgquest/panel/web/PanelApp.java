@@ -221,6 +221,11 @@ public final class PanelApp {
         this.playerNames = new PlayerNameDirectory(agentStore, () -> config.agents().defaultAgentId());
         this.notifications = new NotificationCenter(agentStore, agentRegistry,
                 new NotificationReadStore(config.panelDbPath()), playerNames);
+        // #881 (TC-442) : la cloche montre aussi les derniers retraits de l'Atelier (audit seul) —
+        // corbeille, restauration, suppression définitive ; pas chaque création ou enregistrement.
+        this.notifications.usePanelOperations(() -> panelOperations(audit.recent(300).stream()
+                .filter(e -> NotificationCenter.PANEL_OPERATIONS_IN_BELL.contains(e.action())).toList(),
+                NotificationCenter.PANEL_OPERATIONS_SHOWN));
         this.contentEditor = new ContentEditorPages(contentWorkspace);
         // Issue #194 : suppression de contenu, aperçu + confirmation. Partage l'espace de travail
         // et le catalogue source, donc voit exactement ce que l'éditeur voit.
@@ -1200,7 +1205,7 @@ public final class PanelApp {
                 outcome == com.lodygames.rpgquest.panel.building.BuildingProjectStore.TrashOutcome.DONE ? "OK" : "DENIED", outcome.name(), rid);
         return switch (outcome) {
             case DONE -> PlanOutcome.redirect(WorkshopPages.BASE + "?ok=" + enc("Projet « " + project.name()
-                    + " » mis à la corbeille. Rien n'a été effacé : il peut être restauré depuis la corbeille."));
+                    + " » mis à la corbeille. Rien n'a été effacé : il peut être restauré depuis la corbeille. Trace : Historique › onglet « Opérations du panel »."));
             case STALE -> PlanOutcome.redirect(projectLocation(project.id(), "", null, "Le projet a été modifié "
                     + "entre-temps : relisez-le avant de le retirer. Rien n'a changé."));
             case NOT_FOUND -> PlanOutcome.redirect(WorkshopTrashPages.URL + "?ok="
@@ -1304,7 +1309,7 @@ public final class PanelApp {
                     outcome == com.lodygames.rpgquest.panel.building.BuildingProjectStore.TrashOutcome.DONE ? "OK" : "DENIED", outcome.name(), rid);
             return switch (outcome) {
                 case DONE -> WorkshopPages.BASE + "/project?id=" + enc(project.id()) + "&ok=" + enc("Projet « "
-                        + project.name() + " » restauré dans l'Atelier, avec ses versions de plan.");
+                        + project.name() + " » restauré dans l'Atelier, avec ses versions de plan. Trace : Historique › onglet « Opérations du panel ».");
                 case STALE -> WorkshopTrashPages.URL + "?err=" + enc("Le projet a changé entre-temps : rechargez "
                         + "la corbeille. Rien n'a été restauré.");
                 case NOT_FOUND -> WorkshopTrashPages.URL + "?ok=" + enc("Ce projet n'est plus dans la corbeille : "
@@ -1329,7 +1334,7 @@ public final class PanelApp {
         return switch (outcome) {
             case DELETED -> WorkshopTrashPages.URL + "?ok=" + enc("Projet « " + project.name() + " » supprimé "
                     + "définitivement avec ses versions de plan. Bibliothèque, bâtiments posés et emplacements : "
-                    + "inchangés.");
+                    + "inchangés. Trace : Historique › onglet « Opérations du panel ».");
             case STALE -> WorkshopTrashPages.URL + "?err=" + enc("Le projet a changé entre-temps : rechargez la "
                     + "corbeille. Rien n'a été supprimé.");
             case BUSY -> WorkshopTrashPages.URL + "?err=" + enc("Une conception automatique vient de démarrer : "
@@ -5554,10 +5559,22 @@ public final class PanelApp {
                 .map(e -> ActionsPages.Refusal.of(e.ts(), e.actor(), e.target(), e.details()))
                 .toList();
         // Issue #881 : les opérations du panel seul sur l'Atelier (corbeille, suppression…) — même journal.
+        List<ActionsPages.PanelOperation> operations = panelOperations(journal, Integer.MAX_VALUE);
+        String body = ActionsPages.list(allRecentActions(500), refusals, operations, query, now, playerNames.current());
+        Http.html(exchange, 200, renderPage("Historique des actions", session, "/actions", body));
+    }
+
+    /**
+     * Les opérations du panel seul sur les projets de l'Atelier ({@code building.project.*}), de la plus
+     * récente à la plus ancienne, au plus {@code max} : l'Historique (#881) et la cloche (TC-442).
+     */
+    private List<ActionsPages.PanelOperation> panelOperations(List<com.lodygames.rpgquest.panel.audit.AuditEntry> journal,
+                                                             int max) {
         String agentId = config.agents().defaultAgentId();
         Map<String, Optional<ActionsPages.PanelOperation.ProjectRef>> projectRefs = new java.util.HashMap<>();
-        List<ActionsPages.PanelOperation> operations = journal.stream()
+        return journal.stream()
                 .filter(e -> e.action() != null && e.action().startsWith("building.project."))
+                .limit(max)
                 .map(e -> ActionsPages.PanelOperation.of(e.ts(), e.actor(), e.action(), e.result(), e.target(),
                         e.details(), id -> projectRefs.computeIfAbsent(id, k -> planProjects.find(k)
                                 .filter(p -> p.agentId().equals(agentId))
@@ -5565,8 +5582,6 @@ public final class PanelApp {
                                         ? WorkshopTrashPages.URL + "#projet-" + enc(p.id())
                                         : WorkshopPages.BASE + "/project?id=" + enc(p.id()), p.name())))))
                 .toList();
-        String body = ActionsPages.list(allRecentActions(500), refusals, operations, query, now, playerNames.current());
-        Http.html(exchange, 200, renderPage("Historique des actions", session, "/actions", body));
     }
 
     /**

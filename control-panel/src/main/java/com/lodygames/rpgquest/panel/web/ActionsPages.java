@@ -25,6 +25,8 @@ public final class ActionsPages {
     static final String REFUSED_SLUG = "refused";
     /** Issue #881 : filtre des opérations faites par le panel seul (Atelier), sans action agent. */
     static final String PANEL_SLUG = "panel";
+    /** L'onglet « Opérations du panel » de l'Historique (#881). */
+    public static final String PANEL_OPERATIONS_URL = "/actions?status=" + PANEL_SLUG + "&domain=all";
 
     /**
      * Une opération faite <strong>par le panel seul</strong> sur un projet de l'Atelier (création,
@@ -243,6 +245,7 @@ public final class ActionsPages {
                 "Toutes les actions envoyées aux agents RPGQuest : statut, cible, résultat.", ""));
 
         sb.append(searchAndFilters(q, present, total, refusals.size(), operations.size()));
+        sb.append(panelOperationsHint(operations, now));
 
         if (pageRows.isEmpty()) {
             sb.append(Ui.empty("history", total == 0
@@ -254,6 +257,25 @@ public final class ActionsPages {
         }
         sb.append(pagination(q, page, pages));
         return sb.toString();
+    }
+
+    /**
+     * #881 (TC-442) — la liste par défaut ne montre que les actions envoyées aux agents : une mise à la
+     * corbeille ou une suppression définitive faite dans l'Atelier n'y figure pas. Le bandeau dit où
+     * la trouver, avec la dernière en date.
+     */
+    static String panelOperationsHint(List<PanelOperation> operations, Instant now) {
+        if (operations.isEmpty()) {
+            return "";
+        }
+        PanelOperation last = operations.get(0);
+        String what = Http.esc(last.label()) + (last.name().isEmpty() ? "" : " « " + Http.esc(last.name()) + " »")
+                + (last.ok() ? "" : " (refusé)") + ", " + Http.esc(ActionView.relativeTime(last.at(), now))
+                + " par " + Http.esc(last.actor());
+        return Ui.banner("info", "Les opérations de l'<strong>Atelier</strong> (création, corbeille, restauration, "
+                + "suppression définitive) se font dans PlugAdmin seul : elles ne figurent pas dans cette liste. "
+                + "Dernière : " + what + ". <a href=\"" + PANEL_OPERATIONS_URL + "\">Voir les opérations du panel ("
+                + operations.size() + ")</a>");
     }
 
     private static boolean matches(AgentActionRow a, Query q, PlayerNames names) {

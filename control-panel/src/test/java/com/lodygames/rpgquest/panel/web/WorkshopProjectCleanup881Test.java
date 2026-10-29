@@ -208,7 +208,7 @@ class WorkshopProjectCleanup881Test {
         sites("");
         String home = get("/buildings/workshop").body();
         assertFalse(home.contains("Opérations du panel (Atelier)"), "aucune section sans opération");
-        assertFalse(get("/actions").body().contains("ne figurent pas dans cette liste"), "aucun bandeau sans opération");
+        assertFalse(get("/actions").body().contains("PlugAdmin seul</div>"), "aucune opération sans geste");
         createProject("Projet gardé", "Une création seule.", "projet_garde");
         assertFalse(get("/buildings/workshop").body().contains("Opérations du panel (Atelier)"),
                 "une création seule ne sonne pas la cloche");
@@ -236,11 +236,14 @@ class WorkshopProjectCleanup881Test {
         assertTrue(bell.contains("href=\"" + ActionsPages.PANEL_OPERATIONS_URL.replace("&", "&amp;") + "\"")
                 || bell.contains("href=\"" + ActionsPages.PANEL_OPERATIONS_URL + "\""), bell);
 
-        // L'Historique par défaut dit où regarder, avec la dernière opération.
+        // L'Historique par défaut (« Tous ») les montre lui-même, plus récente d'abord, sans bandeau-renvoi.
         String history = get("/actions").body();
-        assertTrue(history.contains("ne figurent pas dans cette liste")
-                && history.contains("Supprimé définitivement « Cabane de test »")
-                && history.contains("Voir les opérations du panel (4)"), excerpt(history));
+        String table = history.substring(history.indexOf("actions-history"));
+        assertTrue(table.contains("Supprimé définitivement") && table.contains("Cabane de test")
+                && table.indexOf("Supprimé définitivement") < table.indexOf("Mis à la corbeille")
+                && history.contains("dont 4 opérations du panel") && history.contains("Opérations du panel (4)"),
+                excerpt(history));
+        assertFalse(history.contains("ne figurent pas dans cette liste"), "plus de bandeau-renvoi");
     }
 
     @Test

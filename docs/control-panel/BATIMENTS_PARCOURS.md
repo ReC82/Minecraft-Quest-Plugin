@@ -83,7 +83,7 @@ bâtiment n'est ni posé, ni lié à un portail, ni publié dans la bibliothèqu
 par la Bibliothèque, #644), et si l'usage est vérifiable. Aucun bloc du monde n'est touché. Chaque geste, refus
 compris, apparaît dans **Historique → « Opérations du panel »**. Les trois derniers retraits (corbeille, restauration,
 suppression définitive) apparaissent aussi dans la **cloche**, section « Opérations du panel (Atelier) », et
-l'onglet « Tous » de l'Historique rappelle où les trouver.
+l'onglet « Tous » de l'Historique les montre parmi les actions agent, dans l'ordre chronologique.
 
 ## Ce que l'ancien parcours devient
 

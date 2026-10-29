@@ -9412,6 +9412,30 @@ Propriétaire. **Lecture seule** : aucune création, corbeille ni suppression n'
 (aucune section sans opération ; une création seule ne sonne pas la cloche ; message de succès qui donne le
 chemin ; section hors de `data-notif-list`, la plus récente d'abord ; bandeau de l'onglet « Tous »).
 
+### TC-445 — Historique : actions agent et opérations du panel en un seul flux, présentation commune (issue #881, retour du 29/10 17:30 UTC, PENDING MANUAL VALIDATION)
+
+**Prérequis** : PlugAdmin de la branche d'intégration après la PR « historique unifié » (déploiement à autoriser),
+compte Propriétaire. **Lecture seule** : aucune création, corbeille ni suppression ; les événements déjà stockés
+(`test_cabane_747d`, `essai_881`) suffisent. Remplace l'étape 3 de TC-444 (bandeau retiré).
+
+1. `/actions` (onglet « Tous »), 1280 px. **Attendu** : pas de bandeau-renvoi ; les lignes « Supprimé
+   définitivement » et « Mis à la corbeille » de « TEST #747d cabane (ne pas utiliser) » (17:51 / 17:50 heure de
+   Paris) apparaissent **à leur place chronologique** parmi les actions agent, une seule fois chacune, sous-titre
+   « Bâtiments / Atelier · PlugAdmin seul », pastille « fait », acteur `owner`, cible « (n'existe plus) » ; compte
+   « N entrées · dont M opérations du panel ».
+2. Onglet « Opérations du panel ». **Attendu** : seulement ces opérations (aucune action agent), même tableau.
+3. « En cours », puis domaine « PNJ ». **Attendu** : aucune opération du panel, mais la mention « … opérations du
+   panel écartées par ce filtre (les voir) » ; le lien ouvre l'onglet « Opérations du panel ».
+4. « Succès », puis domaine « Bâtiments / Atelier ». **Attendu** : les opérations faites y figurent.
+5. Rechercher `cabane`. **Attendu** : les deux opérations, aucune action agent sans rapport.
+6. Une ligne d'action agent : clic sur la ligne ou « Voir le détail » → sa fiche ; « Retour » ramène au même filtre.
+7. Onglets « Succès », « Refusées avant envoi », « Opérations du panel » : même présentation (Date · Opération ·
+   Cible · Résultat · Acteur). Téléphone (390 px) : cartes lisibles, aucun défilement horizontal.
+
+**Couverture automatisée** : `HistoryUnifiedStream881Test` (fusion triée sans doublon, onglet panel seul, filtres
+qui signalent les opérations écartées, recherche sur les deux origines, présentation commune et refus) ;
+`WorkshopProjectCleanup881Test#aTrashThenDeletionIsVisibleInTheBellAndFromTheDefaultHistoryTab` ; `ActionsCenterTest`.
+
 ### TC-437 — Classements par type de créature sur le portail bêta (issue #734, PENDING MANUAL VALIDATION)
 
 **But** : chaque créature réellement tuée (zombie, squelette, araignée…) a son propre classement, distinct du cumul « Monstres » ; un mob spécial RPGQuest a le sien, séparé de sa créature de base ; rien n'est inventé pour les types jamais tués.

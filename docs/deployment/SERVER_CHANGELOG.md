@@ -49,6 +49,32 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-29 - PlugAdmin : Historique unifié, actions agent et opérations du panel (#881, TC-445)
+
+### Changement
+
+`/actions` onglet « Tous » : un seul flux trié par date réunissant les actions agent et les opérations du panel
+seul sur l'Atelier (`audit_log`, `building.project.*`) ; filtres de statut/domaine appliqués aux deux, opérations
+écartées signalées ; même tableau sobre (Date · Opération · Cible · Résultat · Acteur) et mêmes cartes mobiles
+pour tous les onglets ; nouveau domaine « Bâtiments / Atelier » (`building.*`). Bandeau de renvoi de #914 retiré.
+
+### Action serveur
+
+Aucune sur VeryGames : **PlugAdmin seul** (`scripts/plugadmin/deploy.sh`), JAR Minecraft inchangé, aucune
+migration. **Non déployé** : déploiement soumis à l'autorisation du propriétaire sur #881.
+
+### Sauvegarde préalable
+
+`sqlite3 /var/lib/plugadmin/control-panel.db ".backup …"` avant le déploiement (comme pour #914).
+
+### Validation
+
+TC-445 (lecture seule) dans `docs/MANUAL_TEST_PLAN.md`.
+
+### Rollback
+
+Release précédente de PlugAdmin sous `/opt/plugadmin/releases/` (procédure de `scripts/plugadmin/deploy.sh`).
+
 ## 2026-10-29 - Plugin + portail + PlugAdmin : classements d'élevage (#734, TC-443)
 
 ### Changement

@@ -152,7 +152,7 @@ class NotificationsBugfixTest {
         assertEquals(200, get("/actions").statusCode());
         assertTrue(list.contains("<h1>Historique des actions</h1>"));
         assertTrue(list.contains("nav nav-pills actions-status"));
-        assertTrue(list.contains("table table-hover align-middle actions-table"));
+        assertTrue(list.contains("table align-middle actions-table actions-history"));
         assertTrue(list.contains("d-md-none actions-cards"));
         assertTrue(get("/actions?status=success").body().contains("actions-table"));
         assertTrue(get("/actions?domain=quests").body().contains("actions-table"));

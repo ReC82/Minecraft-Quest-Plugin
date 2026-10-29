@@ -232,9 +232,9 @@ class ActionsCenterTest {
         assertTrue(main(get("/actions?q=Citizens&status=failed").body()).contains("Rafraîchir le catalogue des PNJ"));
 
         // table desktop + cartes mobile
-        assertTrue(base.contains("table table-hover align-middle actions-table"));
+        assertTrue(base.contains("table align-middle actions-table actions-history"));
         assertTrue(base.contains("d-md-none actions-cards"));
-        assertTrue(base.contains("badge text-bg-success") || base.contains("badge text-bg-danger"));
+        assertTrue(base.contains("pill pill--success") || base.contains("pill pill--failed"));
     }
 
     @Test

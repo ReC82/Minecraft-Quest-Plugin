@@ -13,7 +13,8 @@ import java.util.Set;
 
 /**
  * Page <strong>Historique des actions</strong> ({@code /actions}, issue #93) : liste filtrable et
- * recherchable de toutes les actions agent, plus une vue détail ({@code /actions/<id>}). Design
+ * recherchable de toutes les actions agent et (#881) des opérations faites par le panel seul, en un flux
+ * unique, plus une vue détail ({@code /actions/<id>}). Design
  * system PlugAdmin + Bootstrap. <strong>Pur</strong> : reçoit la liste déjà chargée depuis
  * {@link com.lodygames.rpgquest.panel.agent.AgentStore} (source de vérité {@code agent_action}),
  * ne conserve aucun état.
@@ -213,7 +214,10 @@ public final class ActionsPages {
         return list(all, refusals, List.of(), q, now, names);
     }
 
-    /** @param operations opérations du panel seul (#881), affichées sous leur propre onglet */
+    /**
+     * @param operations opérations du panel seul (#881) : mêlées aux actions agent dans « Tous » (flux
+     *                   unique trié par date), seules sous l'onglet « Opérations du panel »
+     */
     public static String list(List<AgentActionRow> all, List<Refusal> refusals, List<PanelOperation> operations,
                               Query q, Instant now, PlayerNames names) {
         if (q.refused()) {
@@ -222,60 +226,94 @@ public final class ActionsPages {
         if (q.panel()) {
             return panelList(operations, refusals.size(), q, now);
         }
-        List<AgentActionRow> filtered = new ArrayList<>();
         Set<ActionView.Domain> present = new LinkedHashSet<>();
+        List<Line> filtered = new ArrayList<>();
         for (AgentActionRow a : all) {
             present.add(ActionView.Domain.of(a.type()));
             if (ActionView.targetsPlayer(a.type())) {
                 present.add(ActionView.Domain.PLAYERS);
             }
             if (matches(a, q, names)) {
-                filtered.add(a);
+                filtered.add(Line.of(a, q, names));
             }
         }
+        int opsShown = 0;
+        int opsHidden = 0;
+        for (PanelOperation o : operations) {
+            present.add(ActionView.Domain.BUILDINGS);
+            if (!matchesSearch(o, q)) {
+                continue;
+            }
+            if (matchesFilters(o, q)) {
+                filtered.add(Line.of(o));
+                opsShown++;
+            } else {
+                opsHidden++;
+            }
+        }
+        // Un seul flux : actions agent et opérations du panel, de la plus récente à la plus ancienne.
+        filtered.sort(java.util.Comparator.comparing(Line::at).reversed());
         int total = filtered.size();
         int pages = Math.max(1, (total + PAGE_SIZE - 1) / PAGE_SIZE);
         int page = Math.min(q.page(), pages);
         int from = (page - 1) * PAGE_SIZE;
-        List<AgentActionRow> pageRows = from >= total ? List.of()
-                : filtered.subList(from, Math.min(total, from + PAGE_SIZE));
+        List<Line> pageRows = from >= total ? List.of() : filtered.subList(from, Math.min(total, from + PAGE_SIZE));
 
-        StringBuilder sb = new StringBuilder();
-        sb.append(Ui.pageHeader("history", "Historique des actions",
-                "Toutes les actions envoyées aux agents RPGQuest : statut, cible, résultat.", ""));
-
-        sb.append(searchAndFilters(q, present, total, refusals.size(), operations.size()));
-        sb.append(panelOperationsHint(operations, now));
-
+        StringBuilder sb = new StringBuilder(header());
+        sb.append(searchAndFilters(q, present, countNote(total, opsShown, opsHidden, q), refusals.size(),
+                operations.size()));
         if (pageRows.isEmpty()) {
             sb.append(Ui.empty("history", total == 0
                     ? "Aucune action ne correspond à ces critères."
                     : "Aucune action sur cette page."));
         } else {
-            sb.append(desktopTable(pageRows, now, q, names));
-            sb.append(mobileCards(pageRows, now, q, names));
+            sb.append(lines(pageRows, now));
         }
         sb.append(pagination(q, page, pages));
         return sb.toString();
     }
 
+    private static String header() {
+        return Ui.pageHeader("history", "Historique des actions",
+                "Actions envoyées aux agents RPGQuest et opérations faites dans PlugAdmin seul (Atelier) : "
+                        + "statut, cible, résultat, acteur.", "");
+    }
+
     /**
-     * #881 (TC-442) — la liste par défaut ne montre que les actions envoyées aux agents : une mise à la
-     * corbeille ou une suppression définitive faite dans l'Atelier n'y figure pas. Le bandeau dit où
-     * la trouver, avec la dernière en date.
+     * #881 — le compte de « Tous », qui dit combien d'opérations du panel il contient et, si un filtre de
+     * statut ou de domaine en écarte, combien et où les voir : aucun filtre ne les masque en silence.
      */
-    static String panelOperationsHint(List<PanelOperation> operations, Instant now) {
-        if (operations.isEmpty()) {
-            return "";
+    private static String countNote(int total, int opsShown, int opsHidden, Query q) {
+        if (opsShown == 0 && opsHidden == 0) {
+            return total + (total > 1 ? " actions" : " action");
         }
-        PanelOperation last = operations.get(0);
-        String what = Http.esc(last.label()) + (last.name().isEmpty() ? "" : " « " + Http.esc(last.name()) + " »")
-                + (last.ok() ? "" : " (refusé)") + ", " + Http.esc(ActionView.relativeTime(last.at(), now))
-                + " par " + Http.esc(last.actor());
-        return Ui.banner("info", "Les opérations de l'<strong>Atelier</strong> (création, corbeille, restauration, "
-                + "suppression définitive) se font dans PlugAdmin seul : elles ne figurent pas dans cette liste. "
-                + "Dernière : " + what + ". <a href=\"" + PANEL_OPERATIONS_URL + "\">Voir les opérations du panel ("
-                + operations.size() + ")</a>");
+        StringBuilder sb = new StringBuilder().append(total).append(total > 1 ? " entrées" : " entrée");
+        if (opsShown > 0) {
+            sb.append(" · dont ").append(opsShown).append(opsShown > 1 ? " opérations" : " opération")
+                    .append(" du panel");
+        }
+        if (opsHidden > 0) {
+            sb.append(" · ").append(opsHidden).append(opsHidden > 1 ? " opérations du panel écartées"
+                            : " opération du panel écartée").append(" par ce filtre (<a href=\"")
+                    .append(Http.esc(q.href("status", PANEL_SLUG).replace("&domain=" + enc(q.domainSlug()),
+                            "&domain=all"))).append("\">les voir</a>)");
+        }
+        return sb.toString();
+    }
+
+    /** Une opération du panel réussie compte comme un succès, refusée comme un échec ; jamais « En cours ». */
+    private static boolean matchesFilters(PanelOperation o, Query q) {
+        if (q.group() == ActionView.Group.PENDING
+                || q.group() == ActionView.Group.SUCCESS && !o.ok()
+                || q.group() == ActionView.Group.FAILED && o.ok()) {
+            return false;
+        }
+        return q.domain() == null || q.domain() == ActionView.Domain.BUILDINGS;
+    }
+
+    private static boolean matchesSearch(PanelOperation o, Query q) {
+        return q.search() == null || q.search().isBlank()
+                || o.searchText().contains(q.search().toLowerCase(Locale.ROOT));
     }
 
     private static boolean matches(AgentActionRow a, Query q, PlayerNames names) {
@@ -306,73 +344,37 @@ public final class ActionsPages {
     /** Issue #169 : les refus avant envoi, distincts des actions exécutées (aucune fiche agent). */
     private static String refusedList(List<Refusal> refusals, int operationCount, Query q, Instant now) {
         String needle = q.search() == null ? "" : q.search().toLowerCase(Locale.ROOT);
-        List<Refusal> rows = refusals.stream().filter(r -> needle.isBlank() || (r.type() + " "
+        List<Line> rows = refusals.stream().filter(r -> needle.isBlank() || (r.type() + " "
                 + ActionView.humanLabel(r.type()) + " " + r.target() + " " + r.reason() + " " + r.actor())
-                .toLowerCase(Locale.ROOT).contains(needle)).limit(200).toList();
-        StringBuilder sb = new StringBuilder();
-        sb.append(Ui.pageHeader("history", "Historique des actions",
-                "Toutes les actions envoyées aux agents RPGQuest : statut, cible, résultat.", ""));
-        sb.append(searchAndFilters(q, Set.of(), rows.size(), refusals.size(), operationCount));
+                .toLowerCase(Locale.ROOT).contains(needle)).limit(200).map(Line::of).toList();
+        StringBuilder sb = new StringBuilder(header());
+        sb.append(searchAndFilters(q, Set.of(), rows.size() + " refus", refusals.size(), operationCount));
         sb.append(Ui.banner("info", "Demandes <strong>refusées par PlugAdmin avant tout envoi</strong> au serveur "
                 + "(confirmation manquante, valeur invalide, conflit…) : rien n'a été exécuté en jeu."));
         if (rows.isEmpty()) {
             return sb.append(Ui.empty("history", "Aucun refus ne correspond à ces critères.")).toString();
         }
-        sb.append("<div class=\"table-responsive\"><table class=\"table align-middle actions-table actions-refused\">")
-                .append("<thead><tr><th>Date</th><th>Action demandée</th><th>Cible</th><th>Motif du refus</th>"
-                        + "<th>Acteur</th></tr></thead><tbody>");
-        for (Refusal r : rows) {
-            sb.append("<tr><td class=\"nowrap\"><span title=\"").append(Http.esc(r.at().toString())).append("\">")
-                    .append(Http.esc(ActionView.relativeTime(r.at(), now))).append("</span></td><td>")
-                    .append(r.type().isEmpty() ? "<span class=\"muted\">—</span>"
-                            : Http.esc(ActionView.humanLabel(r.type())) + " " + Ui.id(r.type()))
-                    .append("</td><td>").append(r.target().isEmpty() ? "<span class=\"muted\">—</span>"
-                            : Http.esc(r.target()))
-                    .append("</td><td>").append(Ui.pill("refusé", "warn", "")).append(' ').append(Http.esc(r.reason()))
-                    .append("</td><td class=\"muted nowrap\">").append(Http.esc(r.actor())).append("</td></tr>");
-        }
-        return sb.append("</tbody></table></div>").toString();
+        return sb.append(lines(rows, now)).toString();
     }
 
     /** Issue #881 : les opérations du panel seul, refus compris, avec un lien vers le projet s'il existe. */
     private static String panelList(List<PanelOperation> operations, int refusedCount, Query q, Instant now) {
-        String needle = q.search() == null ? "" : q.search().toLowerCase(Locale.ROOT);
-        List<PanelOperation> rows = operations.stream()
-                .filter(o -> needle.isBlank() || o.searchText().contains(needle)).limit(200).toList();
-        StringBuilder sb = new StringBuilder();
-        sb.append(Ui.pageHeader("history", "Historique des actions",
-                "Toutes les actions envoyées aux agents RPGQuest : statut, cible, résultat.", ""));
-        sb.append(searchAndFilters(q, Set.of(), rows.size(), refusedCount, operations.size()));
+        List<Line> rows = operations.stream().filter(o -> matchesSearch(o, q)).limit(200).map(Line::of).toList();
+        StringBuilder sb = new StringBuilder(header());
+        sb.append(searchAndFilters(q, Set.of(), rows.size() + (rows.size() > 1 ? " opérations" : " opération"),
+                refusedCount, operations.size()));
         sb.append(Ui.banner("info", "Opérations faites <strong>par PlugAdmin seul</strong> sur les projets de "
                 + "l'Atelier (création, corbeille, restauration, suppression définitive, refus) : rien n'est "
-                + "envoyé au serveur Minecraft."));
+                + "envoyé au serveur Minecraft. Elles figurent aussi dans « Tous », parmi les actions agent."));
         if (rows.isEmpty()) {
             return sb.append(Ui.empty("history", "Aucune opération ne correspond à ces critères.")).toString();
         }
-        sb.append("<div class=\"table-responsive\"><table class=\"table align-middle actions-table actions-panel\">")
-                .append("<thead><tr><th>Date</th><th>Opération</th><th>Projet</th><th>Résultat</th>"
-                        + "<th>Acteur</th></tr></thead><tbody>");
-        for (PanelOperation o : rows) {
-            String project = o.name().isEmpty() ? (o.buildingId().isEmpty() ? "" : Ui.id(o.buildingId()))
-                    : Http.esc(o.name()) + (o.buildingId().isEmpty() ? "" : " " + Ui.id(o.buildingId()));
-            sb.append("<tr><td class=\"nowrap\"><span title=\"").append(Http.esc(o.at().toString())).append("\">")
-                    .append(Http.esc(ActionView.relativeTime(o.at(), now))).append("</span></td><td>")
-                    .append(Http.esc(o.label())).append(" ").append(Ui.id(o.action())).append("</td><td>")
-                    .append(project.isEmpty() ? "<span class=\"muted\">—</span>" : project);
-            if (!o.link().isEmpty()) {
-                sb.append(" <a class=\"small\" href=\"").append(Http.esc(o.link())).append("\">Ouvrir</a>");
-            } else if (!o.projectId().isEmpty()) {
-                sb.append(" <span class=\"muted small\">(n'existe plus)</span>");
-            }
-            sb.append("</td><td>").append(o.ok() ? Ui.pill("fait", "delivered", "✓") : Ui.pill("refusé", "warn", ""))
-                    .append(o.ok() || o.reason().isEmpty() ? "" : " " + Http.esc(o.reason()))
-                    .append("</td><td class=\"muted nowrap\">").append(Http.esc(o.actor())).append("</td></tr>");
-        }
-        return sb.append("</tbody></table></div>").toString();
+        return sb.append(lines(rows, now)).toString();
     }
 
-    private static String searchAndFilters(Query q, Set<ActionView.Domain> present, int total, int refusedCount,
-                                           int operationCount) {
+    /** @param countHtml compte déjà formé (HTML sûr) */
+    private static String searchAndFilters(Query q, Set<ActionView.Domain> present, String countHtml,
+                                           int refusedCount, int operationCount) {
         StringBuilder sb = new StringBuilder();
 
         // Recherche (GET) — conserve les filtres actifs
@@ -381,7 +383,7 @@ public final class ActionsPages {
         sb.append("<input type=\"hidden\" name=\"domain\" value=\"").append(Http.esc(q.domainSlug())).append("\">");
         sb.append("<span class=\"input-group-text\">").append(Icons.icon("search")).append("</span>");
         sb.append("<input type=\"search\" class=\"form-control\" name=\"q\" value=\"").append(Http.esc(q.search()))
-                .append("\" placeholder=\"Rechercher une action, joueur, PNJ, quête…\" aria-label=\"Rechercher\">");
+                .append("\" placeholder=\"Rechercher une action, joueur, PNJ, quête, projet…\" aria-label=\"Rechercher\">");
         sb.append("<button class=\"btn btn-primary\" type=\"submit\">Rechercher</button>");
         if (!q.search().isBlank()) {
             sb.append("<a class=\"btn btn-outline-secondary\" href=\"").append(q.href("q", "")).append("\">")
@@ -406,7 +408,6 @@ public final class ActionsPages {
         sb.append("</ul>");
 
         // Domaine — puces (seulement ceux réellement présents, + « Tous »), sauf pour les refus.
-
         if (!q.refused() && !q.panel()) {
             sb.append("<div class=\"actions-domains\">");
             sb.append(domainChip(q, null, "Tous", "filter"));
@@ -417,9 +418,7 @@ public final class ActionsPages {
             }
             sb.append("</div>");
         }
-        sb.append("<p class=\"count-note\">").append(total).append(q.panel() ? (total > 1 ? " opérations" : " opération")
-                : q.refused() ? " refus"
-                : total > 1 ? " actions" : " action").append("</p>");
+        sb.append("<p class=\"count-note\">").append(countHtml).append("</p>");
         return sb.toString();
     }
 
@@ -438,63 +437,115 @@ public final class ActionsPages {
     }
 
     /**
-     * Le tableau des actions sur grand écran. Issue #266 : chaque ligne ouvre sa fiche — le libellé
-     * est un vrai lien (clavier, lecteur d'écran, clic du milieu), la ligne entière est cliquable
-     * par {@code panel.js} ({@code data-href}), et « Voir le détail » le dit en toutes lettres.
-     * Avant, seules les cartes mobiles et les notifications menaient au détail.
+     * #881 — une ligne de l'Historique, quelle qu'en soit l'origine (action agent, opération du panel,
+     * refus avant envoi) : tous les onglets se rendent avec le même tableau et les mêmes cartes.
+     *
+     * @param href        lien utile (fiche de l'action, projet), ou vide
+     * @param rowLink     la ligne entière ouvre {@code href} (fiche d'action, #266)
+     * @param targetHtml  cible (HTML sûr), vide = « — »
+     * @param statusHtml  pastille de statut (HTML sûr)
      */
-    private static String desktopTable(List<AgentActionRow> rows, Instant now, Query q, PlayerNames names) {
-        StringBuilder sb = new StringBuilder(
-                "<div class=\"table-responsive d-none d-md-block\"><table class=\"table table-hover align-middle actions-table\">");
-        sb.append("<thead><tr><th>Date</th><th>Domaine</th><th>Action</th><th>Cible</th>"
-                + "<th>Statut</th><th>Résultat</th><th>Acteur</th><th><span class=\"visually-hidden\">"
-                + "Détail</span></th></tr></thead><tbody>");
-        for (AgentActionRow a : rows) {
+    record Line(Instant at, String label, String code, String origin, String href, String hrefLabel, boolean rowLink,
+                String targetHtml, String targetCompactHtml, String statusHtml, String result, String actor) {
+
+        static Line of(AgentActionRow a, Query q, PlayerNames names) {
             ActionView.Target tgt = ActionView.target(a, names);
-            String res = ActionView.shortResult(a);
-            String href = detailHref(a, q);
-            sb.append("<tr class=\"act-row\" data-href=\"").append(Http.esc(href)).append("\">")
-                    .append("<td class=\"nowrap\"><span title=\"").append(Http.esc(a.createdAt().toString()))
-                    .append("\">").append(Http.esc(ActionView.relativeTime(a.createdAt(), now))).append("</span></td>")
-                    .append("<td>").append(ActionView.domainBadge(ActionView.Domain.of(a.type()))).append("</td>")
-                    .append("<td><a class=\"act-label\" href=\"").append(Http.esc(href)).append("\">")
-                    .append(Http.esc(ActionView.humanLabel(a.type())))
-                    .append("</a> ").append(Ui.id(a.type())).append("</td>")
-                    .append("<td>").append(tgt.isEmpty() ? "<span class=\"muted\">—</span>" : tgt.html()).append("</td>")
-                    .append("<td>").append(ActionView.statusBadge(a.status())).append("</td>")
-                    .append("<td class=\"act-res\">").append(res.isEmpty() ? "<span class=\"muted\">—</span>" : Http.esc(res)).append("</td>")
-                    .append("<td class=\"muted nowrap\">").append(Http.esc(nz(a.createdBy()))).append("</td>")
-                    .append("<td class=\"nowrap\"><a class=\"btn btn-sm btn-outline-secondary\" href=\"")
-                    .append(Http.esc(href)).append("\" aria-label=\"Voir le détail de l'action ")
-                    .append(Http.esc(ActionView.humanLabel(a.type()))).append("\">Voir le détail</a></td>")
-                    .append("</tr>");
+            return new Line(a.createdAt(), ActionView.humanLabel(a.type()), a.type(),
+                    ActionView.Domain.of(a.type()).label(), detailHref(a, q), "Voir le détail", true,
+                    tgt.isEmpty() ? "" : tgt.html(), tgt.isEmpty() ? "" : tgt.compactHtml(),
+                    ActionView.statusPill(a.status()), ActionView.shortResult(a), nz(a.createdBy()));
+        }
+
+        static Line of(PanelOperation o) {
+            String project = o.name().isEmpty() ? (o.buildingId().isEmpty() ? "" : Ui.id(o.buildingId()))
+                    : Http.esc(o.name()) + (o.buildingId().isEmpty() ? "" : " " + Ui.id(o.buildingId()));
+            String gone = o.link().isEmpty() && !o.projectId().isEmpty()
+                    ? " <span class=\"muted small\">(n'existe plus)</span>" : "";
+            String target = project.isEmpty() && gone.isEmpty() ? "" : project + gone;
+            return new Line(o.at(), o.label(), o.action(), ActionView.Domain.BUILDINGS.label() + " · PlugAdmin seul",
+                    o.link(), "Ouvrir le projet", false, target, target,
+                    o.ok() ? Ui.pill("fait", "success", "✓") : Ui.pill("refusé", "rejected", "✕"),
+                    o.ok() ? "" : o.reason(), o.actor());
+        }
+
+        static Line of(Refusal r) {
+            return new Line(r.at(), r.type().isEmpty() ? "Action refusée" : ActionView.humanLabel(r.type()), r.type(),
+                    "Refusée avant envoi", "", "", false, Http.esc(r.target()), Http.esc(r.target()),
+                    Ui.pill("refusé", "rejected", "✕"), r.reason(), r.actor());
+        }
+    }
+
+    /** Tableau sur grand écran, cartes sur téléphone : la même présentation pour tout l'Historique. */
+    static String lines(List<Line> rows, Instant now) {
+        return desktopTable(rows, now) + mobileCards(rows, now);
+    }
+
+    /**
+     * Le tableau sur grand écran. Issue #266 : la ligne d'une action ouvre sa fiche — le libellé est un
+     * vrai lien (clavier, lecteur d'écran, clic du milieu), la ligne entière est cliquable par
+     * {@code panel.js} ({@code data-href}), et « Voir le détail » le dit en toutes lettres. #881 : cinq
+     * colonnes sobres (date, opération, cible, résultat, acteur), le domaine sous le libellé.
+     */
+    private static String desktopTable(List<Line> rows, Instant now) {
+        StringBuilder sb = new StringBuilder("<div class=\"table-responsive d-none d-md-block\">"
+                + "<table class=\"table align-middle actions-table actions-history\">");
+        sb.append("<thead><tr><th>Date</th><th>Opération</th><th>Cible</th><th>Résultat</th><th>Acteur</th>"
+                + "</tr></thead><tbody>");
+        for (Line l : rows) {
+            String href = Http.esc(l.href());
+            sb.append("<tr class=\"act-row\"").append(l.rowLink() ? " data-href=\"" + href + "\"" : "").append(">")
+                    .append("<td class=\"nowrap\">").append(when(l.at(), now)).append("</td><td>")
+                    .append(l.rowLink() ? "<a class=\"act-label\" href=\"" + href + "\">" + Http.esc(l.label()) + "</a>"
+                            : "<span class=\"act-label\">" + Http.esc(l.label()) + "</span>")
+                    .append(l.code().isEmpty() ? "" : " " + Ui.id(l.code()))
+                    .append("<div class=\"act-sub\">").append(Http.esc(l.origin()));
+            if (!l.href().isEmpty()) {
+                sb.append(" · <a href=\"").append(href).append("\"");
+                if (l.rowLink()) {
+                    sb.append(" aria-label=\"Voir le détail de l'action ").append(Http.esc(l.label())).append("\"");
+                }
+                sb.append(">").append(Http.esc(l.hrefLabel())).append("</a>");
+            }
+            sb.append("</div></td><td>").append(l.targetHtml().isEmpty() ? "<span class=\"muted\">—</span>" : l.targetHtml())
+                    .append("</td><td class=\"act-res\">").append(l.statusHtml())
+                    .append(l.result().isEmpty() ? "" : " " + Http.esc(l.result()))
+                    .append("</td><td class=\"muted nowrap\">").append(Http.esc(l.actor())).append("</td></tr>");
         }
         return sb.append("</tbody></table></div>").toString();
     }
 
-    private static String mobileCards(List<AgentActionRow> rows, Instant now, Query q, PlayerNames names) {
+    private static String mobileCards(List<Line> rows, Instant now) {
         StringBuilder sb = new StringBuilder("<div class=\"d-md-none actions-cards\">");
-        for (AgentActionRow a : rows) {
-            ActionView.Target tgt = ActionView.target(a, names);
-            String res = ActionView.shortResult(a);
-            sb.append("<a class=\"card actions-card\" href=\"").append(Http.esc(detailHref(a, q))).append("\">")
+        for (Line l : rows) {
+            sb.append(l.rowLink() ? "<a class=\"card actions-card\" href=\"" + Http.esc(l.href()) + "\">"
+                            : "<div class=\"card actions-card\">")
                     .append("<div class=\"card-body\">")
-                    .append("<div class=\"ac-top\">").append(ActionView.domainBadge(ActionView.Domain.of(a.type())))
-                    .append(ActionView.statusBadge(a.status())).append("</div>")
-                    .append("<div class=\"ac-title\">").append(Http.esc(ActionView.humanLabel(a.type()))).append("</div>");
-            if (!tgt.isEmpty()) {
-                sb.append("<div class=\"ac-tgt\">").append(tgt.compactHtml()).append("</div>");
+                    .append("<div class=\"ac-top\">").append(l.statusHtml())
+                    .append("<span class=\"act-sub\">").append(Http.esc(l.origin())).append("</span></div>")
+                    .append("<div class=\"ac-title\">").append(Http.esc(l.label())).append("</div>");
+            if (!l.targetCompactHtml().isEmpty()) {
+                sb.append("<div class=\"ac-tgt\">").append(l.targetCompactHtml()).append("</div>");
             }
-            if (!res.isEmpty()) {
-                sb.append("<div class=\"ac-res muted\">").append(Http.esc(res)).append("</div>");
+            if (!l.result().isEmpty()) {
+                sb.append("<div class=\"ac-res muted\">").append(Http.esc(l.result())).append("</div>");
             }
-            sb.append("<div class=\"ac-meta muted\">").append(Http.esc(ActionView.relativeTime(a.createdAt(), now)));
-            if (!nz(a.createdBy()).isEmpty()) {
-                sb.append(" · ").append(Http.esc(a.createdBy()));
+            sb.append("<div class=\"ac-meta muted\">").append(Http.esc(ActionView.relativeTime(l.at(), now)));
+            if (!l.actor().isEmpty()) {
+                sb.append(" · ").append(Http.esc(l.actor()));
             }
-            sb.append("</div></div></a>");
+            if (!l.rowLink() && !l.href().isEmpty()) {
+                sb.append(" · <a href=\"").append(Http.esc(l.href())).append("\">").append(Http.esc(l.hrefLabel()))
+                        .append("</a>");
+            }
+            sb.append("</div></div>").append(l.rowLink() ? "</a>" : "</div>");
         }
         return sb.append("</div>").toString();
+    }
+
+    /** Date homogène pour toutes les lignes : relative, l'instant exact au survol. */
+    private static String when(Instant at, Instant now) {
+        return "<span title=\"" + Http.esc(at.toString()) + "\">" + Http.esc(ActionView.relativeTime(at, now))
+                + "</span>";
     }
 
     private static String pagination(Query q, int page, int pages) {

@@ -40,6 +40,8 @@ public final class ActionView {
         STORIES("stories", "Stories", "stories", "story."),
         DIALOGUES("dialogues", "Dialogues", "dialogues", "dialogue."),
         ITEMS("items", "Items", "gift", "item."),
+        /** #881 : actions {@code building.*} et opérations de l'Atelier faites par PlugAdmin seul. */
+        BUILDINGS("buildings", "Bâtiments / Atelier", "box", "building."),
         SERVER("server", "Serveur / Agents", "server", "server.", "agent."),
         OTHER("other", "Autres", "info", "");
 
@@ -274,6 +276,21 @@ public final class ActionView {
         };
         return "<span class=\"badge " + cls + " pa-status\">" + Icons.icon(icon)
                 + "<span>" + Http.esc(statusLabel(status)) + "</span></span>";
+    }
+
+    /**
+     * #881 — pastille de statut sobre (même style que les opérations du panel et les refus) : l'Historique
+     * présente toutes ses lignes avec la même brique, quelle qu'en soit l'origine.
+     */
+    public static String statusPill(AgentActionStatus status) {
+        return switch (status) {
+            case SUCCESS -> Ui.pill(statusLabel(status), "success", "✓");
+            case DELIVERED -> Ui.pill(statusLabel(status), "delivered", "→");
+            case PENDING -> Ui.pill(statusLabel(status), "pending", "…");
+            case FAILED -> Ui.pill(statusLabel(status), "failed", "✕");
+            case REJECTED -> Ui.pill(statusLabel(status), "rejected", "✕");
+            case EXPIRED -> Ui.pill(statusLabel(status), "expired", "⌛");
+        };
     }
 
     public static String statusLabel(AgentActionStatus status) {

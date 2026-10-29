@@ -718,6 +718,11 @@ a.home-tile:hover .home-tile-cta{opacity:1}
 .actions-table .act-label{font-weight:600}
 .actions-table .act-res{max-width:280px;overflow-wrap:anywhere}
 .actions-table .nowrap{white-space:nowrap}
+/* #881 : une seule présentation pour tout l'Historique (actions agent, opérations du panel, refus). */
+.actions-history td{padding-top:10px;padding-bottom:10px}
+.actions-history tr[data-href]:hover>td{background:var(--surface-3)}
+.act-sub{display:block;font-size:11.5px;color:var(--txt-faint);margin-top:2px}
+.ac-top .act-sub{display:inline;margin:0;align-self:center}
 
 /* -- /actions : cards mobile -- */
 .actions-cards{display:flex;flex-direction:column;gap:10px}

@@ -21,7 +21,6 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
@@ -56,8 +55,11 @@ import org.bukkit.configuration.file.YamlConfiguration;
  * <ul>
  *   <li><strong>air</strong> : capturé. Posée, la variante remplace toute son emprise, comme tout
  *       bâtiment de la bibliothèque ;</li>
- *   <li><strong>conteneurs</strong> (coffres, tonneaux, fours, pupitres, juke-box…) : capturés
- *       <strong>vides</strong> — bloc et orientation conservés, contenu jamais exporté ;</li>
+ *   <li><strong>blocs à contenu</strong> (coffres, tonneaux, fours, pupitres, étagères…) : bloc et
+ *       propriétés conservés, contenu jamais exporté. L'aperçu distingue ce qui reste visible
+ *       (livres d'une bibliothèque sculptée ou d'un pupitre, portés par l'état du bloc), ce qui
+ *       disparaît à l'œil (objets d'une étagère…) et ce qui ne se voyait pas — voir
+ *       {@link CaptureContent} (issue #903). Une perte visible exige un acquittement explicite ;</li>
  *   <li><strong>entités</strong> (cadres, tableaux, supports d'armure, animaux…) : <strong>non
  *       capturées</strong>, et listées par type ;</li>
  *   <li>enseignes, bannières, pots de fleurs, têtes : capturés avec leurs données.</li>
@@ -144,9 +146,19 @@ public final class BuildingCaptureService {
         }
     }
 
-    /** Ce que l'administrateur demande. */
+    /**
+     * Ce que l'administrateur demande.
+     *
+     * @param acceptVisualLoss acquittement explicite des objets affichés qui disparaîtront de la
+     *                         variante (issue #903) ; sans lui, une telle capture est refusée
+     */
     public record Request(String siteId, Margins margins, String newId, String name,
-                          String description, String category) {
+                          String description, String category, boolean acceptVisualLoss) {
+
+        public Request(String siteId, Margins margins, String newId, String name, String description,
+                       String category) {
+            this(siteId, margins, newId, name, description, category, false);
+        }
 
         public Request {
             margins = margins == null ? Margins.NONE : margins;
@@ -358,34 +370,19 @@ public final class BuildingCaptureService {
                 + "emplacement (" + String.join(", ", inside) + ") : ce qui s'y trouve serait capturé.");
     }
 
+    /**
+     * Seule la perte visible reste un avertissement : le reste du contenu est décrit, sans alarme,
+     * dans la section « Blocs avec contenu » de l'aperçu ({@link CaptureContent#groups}).
+     */
     private static List<String> policyWarnings(CaptureSurvey survey) {
         List<String> warnings = new ArrayList<>();
-        if (!survey.containers().isEmpty()) {
-            warnings.add(survey.containers().size() + " conteneur(s) capturé(s) VIDE(S)"
-                    + (survey.filledContainers() > 0 ? ", dont " + survey.filledContainers()
-                            + " qui contien(nen)t quelque chose — ce contenu n'est pas exporté" : "")
-                    + " : " + containerLabel(survey) + ".");
-        }
-        if (survey.entityCount() > 0) {
-            warnings.add(survey.entityCount() + " entité(s) NON capturée(s) — elles resteront en place "
-                    + "mais n'apparaîtront pas dans la variante : " + entityLabel(survey.entities())
-                    + ".");
+        if (survey.visualLosses() > 0) {
+            warnings.add(survey.visualLosses() + " bloc(s) perdront les objets qu'ils affichent ("
+                    + CaptureContent.blocksLabel(survey, CaptureSurvey.ContentFate.VISUAL_LOST)
+                    + ") : la variante ne sera pas identique à l'œil. Retirez-les de la capture, ou "
+                    + "acceptez explicitement cette perte avant de capturer.");
         }
         return warnings;
-    }
-
-    static String containerLabel(CaptureSurvey survey) {
-        Map<String, Integer> byType = new java.util.TreeMap<>();
-        for (CaptureSurvey.ContainerSpot spot : survey.containers()) {
-            byType.merge(spot.type(), 1, Integer::sum);
-        }
-        return entityLabel(byType);
-    }
-
-    static String entityLabel(Map<String, Integer> counts) {
-        List<String> parts = new ArrayList<>();
-        new java.util.TreeMap<>(counts).forEach((type, count) -> parts.add(count + " × " + type));
-        return String.join(", ", parts);
     }
 
     // ---- Capture ---------------------------------------------------------------------------------
@@ -425,6 +422,12 @@ public final class BuildingCaptureService {
                     + "bornes ont changé) : rien n'a été capturé. Recalculez l'aperçu.");
         }
         CaptureSurvey survey = preview.survey().orElseThrow();
+        if (survey.visualLosses() > 0 && !request.acceptVisualLoss()) {
+            return Result.refused(survey.visualLosses() + " bloc(s) perdraient les objets qu'ils "
+                    + "affichent (" + CaptureContent.blocksLabel(survey, CaptureSurvey.ContentFate.VISUAL_LOST)
+                    + ") : cochez l'acquittement dans l'aperçu pour capturer quand même. Rien n'a été "
+                    + "capturé.");
+        }
         BuildingFootprint region = preview.region();
         String schematic = request.newId() + ".schem";
         List<int[]> emptied = survey.containers().stream()
@@ -468,7 +471,9 @@ public final class BuildingCaptureService {
 
         String detail = "Capturé comme « " + request.newId() + " » : " + region.label() + ", "
                 + survey.nonAirBlocks() + " blocs non-air, " + survey.containers().size()
-                + " conteneur(s) vidé(s), " + survey.entityCount() + " entité(s) non capturée(s).";
+                + " bloc(s) à contenu sans leurs données (" + survey.count(CaptureSurvey.ContentFate.VISUAL_KEPT)
+                + " gardant leurs livres visibles, " + survey.visualLosses() + " perdant leurs objets "
+                + "affichés), " + survey.entityCount() + " entité(s) non capturée(s).";
         record(preview, actor, true, detail);
         logger.info("[building] " + preview.placement().siteId() + " capturé vers " + request.newId()
                 + " (" + region.label() + ", par " + actor + ").");
@@ -478,6 +483,11 @@ public final class BuildingCaptureService {
         effects.add("buildings/" + request.newId() + ".yml");
         effects.add("façade de référence : " + preview.front().name() + ", ancre locale "
                 + definition.anchorLabel());
+        CaptureContent.groups(survey).forEach(group -> effects.add(group.text()));
+        String entities = CaptureContent.entityNote(survey);
+        if (!entities.isEmpty()) {
+            effects.add("Entités non incluses : " + entities);
+        }
         effects.addAll(preview.warnings());
         return new Result(true, library.find(request.newId()).orElse(definition), "", effects);
     }
@@ -517,12 +527,17 @@ public final class BuildingCaptureService {
         yaml.set("provenance.at", clock.instant().toString());
         yaml.set("provenance.containers-emptied",
                 preview.survey().map(s -> s.containers().size()).orElse(0));
+        yaml.set("provenance.books-kept-as-decor",
+                preview.survey().map(s -> s.count(CaptureSurvey.ContentFate.VISUAL_KEPT)).orElse(0L));
+        yaml.set("provenance.displayed-items-lost",
+                preview.survey().map(CaptureSurvey::visualLosses).orElse(0L));
         yaml.set("provenance.entities-omitted",
-                preview.survey().map(s -> entityLabel(s.entities())).orElse(""));
+                preview.survey().map(s -> CaptureContent.entitiesLabel(s.entities())).orElse(""));
         yaml.options().setHeader(List.of(
                 "Bâtiment capturé depuis une construction posée (issue #246).",
                 "Le schematic est une copie de l'état du monde : il n'existe pas de plan à régénérer.",
-                "Conteneurs capturés vides ; entités (cadres, tableaux…) non capturées."));
+                "Blocs copiés avec leurs propriétés (orientation, livres visibles) ; contenu des",
+                "blocs (objets, livres, textes) jamais copié ; entités (cadres…) non capturées."));
         Path temporary = yml.resolveSibling(yml.getFileName() + ".part");
         Files.writeString(temporary, yaml.saveToString(), StandardCharsets.UTF_8);
         Files.move(temporary, yml, java.nio.file.StandardCopyOption.ATOMIC_MOVE);

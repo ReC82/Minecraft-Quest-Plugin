@@ -9426,3 +9426,35 @@ et bâtiment sur emplacement portail refusés sans capture ni collage, arche sur
 réorientation permise, changement de type d'un emplacement occupé, type conservé après redémarrage),
 `AgentActionExecutorTest` (`kind` dans `building.site.list`, `building.site.kind`), `BuildingSiteDirectoryTest`,
 `BuildingSitesPageTest` (badge, puces, formulaire réel, type inconnu refusé avant la file).
+
+### TC-441 — Capture de bâtiment : livres visibles, objets d'étagère perdus et aperçu en français (issue #903, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et PlugAdmin issus de `fix/903-capture-etats-etageres`, **non déployés** au moment de la
+livraison (le ticket n'autorise que l'audit et les tests isolés). Recette **uniquement sur un projet d'essai** après
+accord du propriétaire : ne jamais recapturer, remplacer ni modifier La grande librairie ni sa variante de sauvegarde
+`la_grande_librairie_aquarium`.
+
+1.  Emplacement d'essai occupé : ajouter une bibliothèque sculptée avec 3 livres, un pupitre avec un livre écrit, une
+    étagère (sapin) avec 2 objets, un coffre plein, un cadre. Bâtiments → Emplacements → fiche → « Capturer la
+    construction actuelle » → Calculer l'aperçu. **Attendu** : bandeau vert « N bloc(s) seront enregistrés à leur
+    position, avec leurs propriétés de bloc… » ; section « Blocs avec contenu » : « Objets affichés perdus » (1 ×
+    étagère en sapin, en avertissement), « Livres visibles conservés comme décor » (1 × bibliothèque sculptée, 1 ×
+    pupitre), « Contenu non copié » (1 × coffre) ; « Entités non incluses : 1 × cadre » ; plus aucun « VIDE(S) » ni
+    identifiant brut pour ces blocs.
+2.  Le bouton s'intitule « Capturer quand même, sans les objets affichés » et la case « J'ai compris : … » est
+    obligatoire. **Attendu** : sans la case, le navigateur bloque ; via un formulaire forgé sans la case, le serveur
+    refuse « cochez l'acquittement » et rien n'est écrit.
+3.  Cocher, capturer sous un identifiant d'essai. Poser la variante sur un **autre** emplacement d'essai, à 0/90/180/270°.
+    **Attendu** : bibliothèque sculptée avec 3 livres visibles et orientée correctement ; pupitre avec livre visible ;
+    étagère sans objets ; coffre vide. Cliquer un livre de la bibliothèque / « Prendre le livre » du pupitre : le décor
+    disparaît **sans rien donner** (aucun livre dupliqué). La construction source et la variante d'origine sont
+    inchangées.
+4.  Capturer une zone sans étagère garnie. **Attendu** : aucune case à cocher, bouton « Capturer la construction
+    actuelle ».
+
+**Couverture automatisée** : `CaptureContentTest` (sort du contenu par type, noms français, aperçu de La grande
+librairie), `BuildingCaptureServiceTest` (perte visible = avertissement + refus sans acquittement, rien écrit ; livres
+de décor sans acquittement ; provenance `books-kept-as-decor` / `displayed-items-lost`), `AgentActionExecutorTest`
+(`accept_visual_loss` transmis seulement s'il est explicite), `AgentActionCatalogTest`, `BuildingLifecyclePageTest`
+(sections françaises, case requise, compatibilité avec un plugin antérieur). Non couvert sans serveur : le
+comportement réel de WorldEdit 7.4.1 / Paper 1.21.11 au collage (étape 3).

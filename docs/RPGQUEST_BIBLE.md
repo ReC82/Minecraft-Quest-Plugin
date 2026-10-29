@@ -2934,7 +2934,7 @@ bâtiment de la bibliothèque. Trois choses restent distinctes et intactes : le 
 | Étape | Action agent | Permission | Écrit |
 | --- | --- | --- | --- |
 | Aperçu | `building.placement.capture.preview` | `BUILDING_READ` | rien |
-| Capture | `building.placement.capture` (`confirm=true` + jeton de l'aperçu) | `BUILDING_WRITE` | `schematics/<id>.schem` + `buildings/<id>.yml` |
+| Capture | `building.placement.capture` (`confirm=true` + jeton de l'aperçu ; `accept_visual_loss=true` exigé si des objets affichés seraient perdus, #903) | `BUILDING_WRITE` | `schematics/<id>.schem` + `buildings/<id>.yml` |
 
 - **Bornes** : par défaut l'emprise persistée du placement (rotation comprise). Ajustement borné face
   par face (`margin_west/east/north/south/down/up`, de −16 à +16). Refus si l'ancre sort de la zone,
@@ -2944,18 +2944,31 @@ bâtiment de la bibliothèque. Trois choses restent distinctes et intactes : le 
   direction que regarde réellement la façade posée (façade d'origine tournée de la rotation de pose),
   l'ancre est la position de l'ancre du monde dans la zone. Posée ailleurs, la variante suit le flux
   #213/#234 habituel.
-- **Politique** : l'air est capturé ; les conteneurs (coffres, tonneaux, fours, pupitres, juke-box,
-  feux de camp, pots décorés…) sont capturés **vides** — jamais leur contenu ; les **entités**
-  (cadres, tableaux, supports d'armure, animaux) ne sont **pas** capturées et sont listées par type
-  dans l'aperçu ; enseignes, bannières, têtes et pots de fleurs gardent leurs données.
+- **Politique** : l'air est capturé ; chaque bloc garde **toutes ses propriétés** (orientation,
+  escaliers, dalles, emplacements occupés d'une bibliothèque sculptée, livre d'un pupitre). Les blocs
+  à contenu (coffres, tonneaux, fours, pupitres, étagères, juke-box, feux de camp, pots décorés…)
+  perdent leurs **données** — objets, livres et leur texte, motifs — qui ne sont **jamais copiées**.
+  L'aperçu (#903) classe chaque bloc à contenu :
+  - **Livres visibles conservés comme décor** (bibliothèque sculptée, pupitre) : l'aspect est porté
+    par l'état du bloc, il reste ; les livres eux-mêmes ne sont pas copiés — dans la variante posée,
+    tenter de les prendre les fait disparaître sans rien donner (aucune duplication).
+  - **Objets affichés perdus** (étagères `*_shelf`, nourriture d'un feu de camp, motifs d'un pot
+    décoré) : avertissement, et la capture est **refusée sans acquittement explicite**
+    (`accept_visual_loss=true`, case à cocher dans PlugAdmin).
+  - **Contenu non copié** (coffre, tonneau… pleins) et **Déjà vides** : information, rien ne change
+    à l'œil.
+
+  Les **entités** (cadres, tableaux, supports d'armure, animaux) ne sont **pas** capturées : note
+  discrète « Entités non incluses » (extension des cadres : #315). Enseignes, bannières, têtes et pots
+  de fleurs gardent leurs données. Les noms sont affichés en français (repli : identifiant brut).
 - **Sûreté** : aucun chunk n'est chargé de force (chunk absent → refus) ; jamais d'écrasement (un
   identifiant, un `.yml` ou un `.schem` existant est refusé) ; écriture via fichier temporaire ; un
   échec d'écriture de la définition retire le `.schem` ; anti-double-envoi par emplacement et par
   identifiant ; aperçu périmé (jeton) refusé. La capture est inscrite au journal de l'emplacement
   source (`CAPTURE`).
 - **YAML produit** : clés habituelles + `category` (facultative) et un bloc `provenance` (site,
-  bâtiment et version d'origine, rotation, monde, bornes, auteur, date, conteneurs vidés, entités
-  omises). Il n'y a pas de clé `plan` : une capture n'est pas régénérable depuis un plan.
+  bâtiment et version d'origine, rotation, monde, bornes, auteur, date, conteneurs vidés,
+  `books-kept-as-decor`, `displayed-items-lost`, entités omises en français). Il n'y a pas de clé `plan` : une capture n'est pas régénérable depuis un plan.
 
 #### Villages et villes : préparés, pas commencés
 

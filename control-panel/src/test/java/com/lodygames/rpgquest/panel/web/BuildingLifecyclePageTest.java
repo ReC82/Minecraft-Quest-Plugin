@@ -646,6 +646,16 @@ class BuildingLifecyclePageTest {
             + "\"warnings\":[\"3 entité(s) NON capturée(s)\"],"
             + "\"token\":\"0123456789abcdef0123456789abcdef\"}";
 
+    /** Plugin #903 : message de résultat, blocs avec contenu en français, perte visible à acquitter. */
+    private static final String CAPTURE_LIBRARY = CAPTURE_OK.replace("\"warnings\":[\"3 entité(s) NON capturée(s)\"],",
+            "\"warnings\":[\"7 bloc(s) perdront les objets qu'ils affichent\"],"
+            + "\"headline\":\"898 bloc(s) seront enregistrés à leur position, avec leurs propriétés de bloc\","
+            + "\"content_groups\":[{\"fate\":\"VISUAL_LOST\",\"count\":7,\"title\":\"Objets affichés perdus\","
+            + "\"text\":\"7 × étagère en sapin\"},{\"fate\":\"VISUAL_KEPT\",\"count\":16,"
+            + "\"title\":\"Livres visibles conservés comme décor\",\"text\":\"14 × bibliothèque sculptée\"}],"
+            + "\"entity_note\":\"4 × cadre, 1 × tortue.\",\"visual_losses\":7,"
+            + "\"acknowledgement\":\"J'ai compris : 7 bloc(s) perdront les objets qu'ils affichent.\",");
+
     @Test
     void theOccupiedSheetOffersTheCaptureWithItsPolicyButNoButtonBeforeAPreview() throws Exception {
         start();
@@ -655,7 +665,7 @@ class BuildingLifecyclePageTest {
         String page = fiche();
 
         assertTrue(page.contains("Capturer la construction actuelle"));
-        assertTrue(page.contains("capturés <strong>vides</strong>"), "la politique des conteneurs est écrite");
+        assertTrue(page.contains("<strong>jamais copié</strong>"), "la politique des blocs à contenu est écrite");
         assertTrue(page.contains("<strong>non capturées</strong>"), "celle des entités aussi");
         assertTrue(page.contains("value=\"building.placement.capture.preview\""));
         assertTrue(page.contains("name=\"new_id\" value=\"test_hut_01_capture\""), "un identifiant nouveau proposé");
@@ -672,11 +682,48 @@ class BuildingLifecyclePageTest {
         String page = fiche();
 
         assertTrue(page.contains("797..805 / 69..74 / -800..-796"), "les bornes capturées");
-        assertTrue(page.contains("2 × item_frame"), "les entités omises sont nommées");
-        assertTrue(page.contains("dont 1 non vide(s)"));
+        assertTrue(page.contains("140 blocs non-air"), "plugin antérieur à #903 : compteurs bruts");
+        assertTrue(page.contains("crée une nouvelle définition</strong>"), "ni source ni ancienne version remplacée");
+        assertFalse(page.contains("name=\"accept_visual_loss\""), "rien à acquitter");
         assertTrue(page.contains("value=\"building.placement.capture\""));
         assertTrue(page.contains("name=\"token\" value=\"0123456789abcdef0123456789abcdef\""));
         assertTrue(page.contains("name=\"margin_east\" value=\"2\""), "les bornes ajustées voyagent");
+    }
+
+    @Test
+    void aLibraryPreviewExplainsTheContentInFrenchAndRequiresTheAcknowledgement() throws Exception {
+        start();
+        seed("building.site.list", SITES_ALIGNED);
+        seed("building.definition.list", LIBRARY);
+        seed("building.placement.capture.preview", CAPTURE_LIBRARY);
+
+        String page = fiche();
+
+        assertTrue(page.contains("898 bloc(s) seront enregistrés"), "message orienté résultat");
+        assertTrue(page.contains("Blocs avec contenu"));
+        assertTrue(page.contains("Objets affichés perdus"));
+        assertTrue(page.contains("Livres visibles conservés comme décor"));
+        assertTrue(page.contains("Entités non incluses"));
+        assertTrue(page.contains("4 × cadre, 1 × tortue."));
+        assertFalse(page.contains("VIDE(S)"), "plus de « conteneurs capturés VIDES »");
+        assertTrue(page.contains("name=\"accept_visual_loss\" value=\"true\" required"),
+                "la perte visible exige une case cochée");
+        assertTrue(page.contains("Capturer quand même, sans les objets affichés"));
+    }
+
+    @Test
+    void theAcknowledgementIsForwardedOnlyWhenTicked() throws Exception {
+        start();
+        seed("building.site.list", SITES_ALIGNED);
+        seed("building.definition.list", LIBRARY);
+        seed("building.placement.capture.preview", CAPTURE_LIBRARY);
+
+        HttpResponse<String> ticked = submitRealForm("building.placement.capture",
+                Map.of("confirm", "true", "accept_visual_loss", "true"));
+
+        assertEquals(303, ticked.statusCode());
+        assertFalse(ticked.headers().firstValue("Location").orElse("").contains("err"),
+                ticked.headers().firstValue("Location").orElse(""));
     }
 
     @Test

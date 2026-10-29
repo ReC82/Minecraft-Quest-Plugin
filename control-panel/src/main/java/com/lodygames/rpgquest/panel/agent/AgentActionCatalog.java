@@ -1878,6 +1878,11 @@ public final class AgentActionCatalog {
                     }
                     params.put("token", token);
                     params.put("confirm", "true");
+                    // Issue #903 : la perte d'objets affichés n'est acceptée que cochée, jamais par défaut.
+                    String accept = trim(form.get("accept_visual_loss"));
+                    if (accept.equals("on") || accept.equals("true")) {
+                        params.put("accept_visual_loss", "true");
+                    }
                 }
             }
             case "npc.definition.delete" -> {

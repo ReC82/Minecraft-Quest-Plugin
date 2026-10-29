@@ -49,6 +49,36 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-29 - Plugin + PlugAdmin : capture de bâtiment — livres visibles, objets affichés et aperçu en français (#903, TC-441)
+
+### Changement
+
+L'aperçu de « Capturer la construction actuelle » classe les blocs à contenu : livres visibles conservés comme décor
+(bibliothèque sculptée, pupitre — portés par l'état du bloc), objets affichés perdus (étagères, feu de camp, motifs
+de pot décoré), contenu non copié, déjà vides ; entités en note. Une perte visible exige `accept_visual_loss=true`
+(case à cocher PlugAdmin), sinon la capture est refusée sans rien écrire. Le contenu des blocs n'est toujours jamais
+copié. Provenance YAML : `books-kept-as-decor`, `displayed-items-lost`.
+
+### Action serveur
+
+**À effectuer, non déployé** (le ticket n'autorise pas de déploiement) : remplacer le JAR RPGQuest **et** PlugAdmin
+ensemble (un PlugAdmin ancien ne peut pas envoyer l'acquittement : une capture avec perte visible serait refusée,
+sans risque). Aucune migration, aucune configuration, aucun contenu. Ne pas toucher aux bâtiments capturés existants
+(dont `la_grande_librairie_aquarium`).
+
+### Sauvegarde préalable
+
+JAR déployé + `data.db` selon `scripts/deploy-verygames.sh` ; release PlugAdmin précédente.
+
+### Validation
+
+TC-441 — PENDING MANUAL VALIDATION, sur projet d'essai seulement.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis redémarrage ; `scripts/plugadmin/rollback.sh app`. Aucune donnée à
+restaurer.
+
 ## 2026-10-27 - Plugin + PlugAdmin : types d'emplacement bâtiment / portail, migration V45 (#568, TC-440)
 
 ### Changement

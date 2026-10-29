@@ -615,8 +615,36 @@ et par tick ; le nombre de succès attendu est arrondi au hasard) :
 | Canne à sucre, cactus | 1 âge par random tick, un bloc tous les 16 | air au-dessus, dans le claim ; cactus jamais posé à côté d'un bloc solide ou de lave | colonne de 3 |
 | Pousse de bambou, bambou | 1/3 (port de `growBamboo` : feuilles, épaisseur, arrêt aléatoire) | air au-dessus, lumière ≥ 9, dans le claim | 16 |
 
-**Non couvert** (volontairement) : pousses d'arbres (un arbre pose des troncs et feuilles hors des
-plantes), fleurs de cactus, plante carnivore/torche-fleur, champignons, lianes, varech. Les fruits
+| Pousses d'arbres (chêne, bouleau, sapin, jungle, acacia, cerisier, chêne noir, chêne pâle, propagule de palétuvier) — issue #917 | 1/7 × part de lumière ; 1er succès : stade 0 → 1 ; suivants : tentative d'arbre (4 au plus par rattrapage) | lumière ≥ 9 au-dessus (lumière de blocs : en permanence ; ciel seul : part du jour où le ciel assombri reste ≥ 9, ≈ 0,6 en plein ciel, temps clair) ; arbre entier dans le claim, voir ci-dessous | un arbre |
+| Propagule suspendue | 1 âge par random tick | aucune | âge 4 (jamais d'arbre) |
+
+**Pousses d'arbres (issue #917, phase 2 de #776).** Essence choisie comme `TreeGrower` vanilla : chêne
+(10 % grand chêne), sapin (carré 2×2 → grand sapin ou grand pin, 50/50), jungle (2×2 → grand arbre de
+jungle), chêne noir et chêne pâle **seulement** en carré 2×2 (sinon la pousse attend au stade 1),
+palétuvier (85 % grand). Un carré 2×2 est cherché comme vanilla et l'arbre part de son coin nord-ouest.
+Politique **tout ou rien** (`TreeGrowthSimulator`) :
+
+1. le générateur vanilla de Paper n'est appelé que si **tous** les chunks à 16 blocs autour de la pousse
+   sont chargés (il lit au-delà du claim : il ne peut ainsi charger aucun chunk) — sinon pas de tentative ;
+2. les pousses sont retirées (eau pour une propagule immergée), l'arbre est calculé **à blanc**
+   (`generateTree` avec un prédicat qui refuse tout et recueille les blocs) ;
+3. l'arbre est **refusé en entier** si un seul bloc sort du claim, tombe dans un chunk non chargé, ou
+   remplacerait autre chose que de l'air, du feuillage, une pousse, la végétation `replaceable_by_trees`
+   (herbes, fleurs hautes, lianes, eau…), de la terre (tag `dirt`, seulement par un bloc `dirt` : terre
+   sous le tronc, podzol des grands sapins) ou les sols que traversent les racines de palétuvier (boue,
+   neige, tapis de mousse, eau, seulement par des racines) — construction, coffre, culture, terre labourée
+   bloquent ;
+4. accepté, il passe par un `StructureGrowEvent` (`isFromBonemeal() = false`, joueur `null`) : annulé ou
+   modifié hors de ces règles, refusé ; sinon ses blocs sont posés sans physique ;
+5. refusé, les pousses sont remises **à l'identique** (stade 1) ; au plus 4 tentatives par rattrapage
+   (aléas de hauteur/forme), puis la pousse attend.
+
+Un arbre devenu tronc n'est plus une plante : un second rattrapage ne le revisite jamais (pas de double
+pousse). Les quatre pousses d'un 2×2 deviennent un seul arbre (rattrapage légèrement plus lent qu'en jeu,
+où chacune tire ses random ticks). Budget : une pousse compte pour 32 plantes dans `blocks-per-tick`.
+
+**Non couvert** (volontairement) : ruches/abeilles des arbres près de fleurs (jamais générées), azalées,
+champignons géants, arbres du Nether (fongus), fleurs de cactus, plante carnivore/torche-fleur, champignons, lianes, varech. Les fruits
 déjà présents, la terre labourée, l'eau et tout autre bloc ne sont jamais modifiés ; aucun objet
 n'est créé ni récolté ; aucune donnée joueur n'est touchée.
 
@@ -629,6 +657,12 @@ rattrapage n'agit que dans les cuboïdes de claims et ne les contourne pas.
 **Limites connues.** Croissance moyenne en une fois, pas tick par tick (un seul `BlockGrowEvent` pour
 plusieurs âges d'une culture). Un chunk chargé mais hors de la distance de simulation (view-distance >
 simulation-distance) ne pousse pas en jeu et n'est pas rattrapé tant qu'il n'est pas déchargé.
+Pousses d'arbres : un arbre qui déborderait du claim, même d'un bloc de feuillage, ne pousse jamais
+hors ligne (planter à au moins 3 blocs du bord, 6 pour un grand arbre) ; une pousse au bord du champ de
+vision (chunks voisins pas encore chargés) ne tente rien et ce rattrapage est perdu ; la météo n'est pas
+prise en compte (part du jour calculée par temps clair) ; la portée de 16 blocs vérifiée couvre largement
+les arbres vanilla (≈ 8 blocs au plus autour du tronc, podzol et racines compris) et un bloc prévu dans un
+chunk non chargé fait de toute façon refuser l'arbre ; aucune ruche n'est posée.
 
 **Coût.** Test `OfflineGrowthServiceTest` : champ plein de 255 blés (16×16, une pierre au milieu)
 traité en ≥ 4 ticks à 64 plantes/tick, aucun chunk chargé par le mécanisme ; ≈ 0,26 s cumulées sous

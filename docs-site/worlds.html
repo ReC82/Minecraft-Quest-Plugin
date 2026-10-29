@@ -330,8 +330,11 @@
       (issue #776). Le serveur ne garde aucun chunk chargé : il note l'heure quand le chunk se décharge et, quand
       il se recharge, applique d'un coup la croissance moyenne de Minecraft pour cette absence (24 h au plus par
       défaut). Blé, carottes, pommes de terre, betteraves, citrouilles et pastèques avec leur fruit, verrues,
-      baies, cacao, canne à sucre, cactus et bambou ; pas les arbres. Lumière, terre humide et hauteurs maximales
+      baies, cacao, canne à sucre, cactus et bambou. Lumière, terre humide et hauteurs maximales
       sont respectées ; rien n'est récolté ni ajouté à un inventaire, et rien ne pousse hors d'un claim.
+      Les pousses d'arbres aussi (issue #917) : l'arbre ne pousse que s'il tient <strong>entièrement</strong>
+      dans le claim sans abîmer de construction (sinon la pousse attend, intacte) — planter à au moins 3 blocs
+      du bord, 6 pour un grand arbre en carré de 4 pousses.
       Réglages : <code>config.yml</code> → <code>claims.offline-growth</code> (<code>enabled</code>,
       <code>worlds</code>, <code>max-catch-up-minutes</code>, <code>blocks-per-tick</code>).
     </p>

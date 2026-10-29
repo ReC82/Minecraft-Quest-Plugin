@@ -60,20 +60,30 @@ pour tous les onglets ; nouveau domaine « Bâtiments / Atelier » (`building.*`
 
 ### Action serveur
 
-Aucune sur VeryGames : **PlugAdmin seul** (`scripts/plugadmin/deploy.sh`), JAR Minecraft inchangé, aucune
-migration. **Non déployé** : déploiement soumis à l'autorisation du propriétaire sur #881.
+**Effectué le 29/10/2026 à 19:37 (heure de Paris)**, sur autorisation écrite du propriétaire (commentaire #881 du
+29/10 18:29 UTC) : PlugAdmin seul `da2257c1` (contient aussi #914) via `scripts/plugadmin/deploy.sh --no-build`
+après `:control-panel:installDist` du commit exact. `DEPLOYED` : `commit=da2257c1…`, CI verte sur `da2257c`. Aucune
+sur VeryGames : JAR Minecraft inchangé (`002facdb`), serveur non redémarré, aucune migration, aucun projet touché.
 
 ### Sauvegarde préalable
 
-`sqlite3 /var/lib/plugadmin/control-panel.db ".backup …"` avant le déploiement (comme pour #914).
+`/var/lib/plugadmin/control-panel.db-20261029T183553Z-pre-881-da2257c1.backup` (`.backup` SQLite,
+`integrity_check` ok, 4 574 lignes `audit_log`). Release précédente `12365fb5` gardée sous
+`/opt/plugadmin/releases/20261029-193731`.
 
 ### Validation
 
-TC-445 (lecture seule) dans `docs/MANUAL_TEST_PLAN.md`.
+Avant : rendu local 1280/390 px de `/actions` sur une copie de la sauvegarde (même JAR). Après : `/health` ONLINE,
+JAR servi identique octet pour octet au build, classe `ActionsPages$Line` présente, `/actions` → 303 /login ;
+contrôle en lecture seule avec un compte temporaire (supprimé ensuite) : « Tous » 523 entrées dont 23 opérations
+du panel, suppression/corbeille de `test_cabane_747d` à leur place chronologique, « En cours » signale « 23
+opérations du panel écartées », cloche « Opérations du panel (Atelier) », aucun débordement à 390 px. TC-444/TC-445
+restent à faire par le propriétaire (`docs/MANUAL_TEST_PLAN.md`).
 
 ### Rollback
 
-Release précédente de PlugAdmin sous `/opt/plugadmin/releases/` (procédure de `scripts/plugadmin/deploy.sh`).
+`scripts/plugadmin/rollback.sh app` (restaure la release `12365fb5` de `/opt/plugadmin/releases/20261029-193731`) ;
+la base n'a pas besoin d'être restaurée (aucune migration).
 
 ## 2026-10-29 - Plugin + portail + PlugAdmin : classements d'élevage (#734, TC-443)
 

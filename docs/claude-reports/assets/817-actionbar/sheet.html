@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{background:#1e1e1e;color:#ddd;font:14px DejaVu Sans,sans-serif;margin:16px}
+h1{font-size:18px;margin:0 0 4px} .grid{display:grid;grid-template-columns:repeat(2,640px);gap:18px}
+figure{margin:0} figcaption{margin-top:4px;font-size:13px} .bad{color:#ff7b7b} .ok{color:#8fdc8f}
+canvas{image-rendering:pixelated;width:640px;height:480px;border:1px solid #444}
+</style></head><body>
+<h1>#817 — ActionBar simulée sur l'écran minimal de Minecraft (320 × 240 px mis à l'échelle, tout facteur GUI), agrandie ×2</h1>
+<p>Rendu <b>simulé</b> (police approchée, largeurs de glyphes de la police par défaut), pas une capture en jeu. Ligne pointillée rouge = bord de l'écran minimal.</p>
+<div class="grid" id="g"></div>
+<script>
+const W={"!":2,",":2,".":2,":":2,";":2,"|":2,"i":2,"'":2,"î":2,"ï":2,"·":2,"`":3,"l":3," ":4,"I":4,"t":4,"[":4,"]":4,"(":4,")":4,"{":4,"}":4,'"':4,"*":4,"f":5,"k":5,"<":5,">":5,"@":7,"~":7};
+const adv=c=>W[c]??((c.charCodeAt(0)<128||/\p{L}|\p{N}/u.test(c))?6:9);
+const C={white:"#FFFFFF",yellow:"#FFFF55",gray:"#AAAAAA",dgray:"#555555",green:"#55FF55",gold:"#FFAA00"};
+const width=spans=>spans.reduce((w,[t])=>w+[...t].reduce((a,c)=>a+adv(c),0),0);
+function frame(title,spans,cls,note){
+  const fig=document.createElement('figure');const cv=document.createElement('canvas');cv.width=320;cv.height=240;
+  const g=cv.getContext('2d');g.imageSmoothingEnabled=false;
+  const sky=g.createLinearGradient(0,0,0,240);sky.addColorStop(0,"#79a6ff");sky.addColorStop(.55,"#b9d3ff");sky.addColorStop(.56,"#5d8a3a");sky.addColorStop(1,"#3f6127");
+  g.fillStyle=sky;g.fillRect(0,0,320,240);
+  g.fillStyle="#6b4f2a";g.fillRect(150,95,22,40);g.fillStyle="#2f6b2a";g.fillRect(135,70,52,32);
+  g.fillStyle="rgba(0,0,0,.55)";g.fillRect(69,218,182,22);for(let i=0;i<9;i++){g.strokeStyle="#888";g.strokeRect(70+i*20,219,20,20);}
+  g.fillStyle="#c33";for(let i=0;i<10;i++)g.fillRect(70+i*8,206,7,6);
+  g.fillStyle="#80ff20";g.fillRect(70,214,182,2);
+  const w=width(spans);let x=Math.round((320-w)/2);const y=240-68+8;
+  g.font="8px DejaVu Sans";g.textBaseline="alphabetic";
+  for(const [t,col] of spans){for(const ch of t){g.fillStyle="#3f3f3f";g.fillText(ch,x+1,y+1);g.fillStyle=C[col];g.fillText(ch,x,y);x+=adv(ch);}}
+  g.setLineDash([3,2]);g.strokeStyle="#f33";g.strokeRect(0.5,0.5,319,239);
+  const cap=document.createElement('figcaption');cap.innerHTML=`<b>${title}</b> — largeur estimée ${w} px / 320 <span class="${cls}">${note}</span>`;
+  fig.append(cv,cap);document.getElementById('g').append(fig);
+}
+const named=(q,c)=>[[q,"white"],[" · ","dgray"],["Bûche de chêne","yellow"],[" "+c,"gray"]];
+frame("AVANT — capture du 29/10 (rejetée)",[["Oak Log","yellow"],[" : ","gray"],["<gold>Bois... ","white"],["2/16","gray"],[", ","dgray"],["<gold>La re... ","white"],["2/20","gray"]],"bad","balises en clair, deux compteurs tronqués");
+frame("APRÈS t = 0 s — une bûche, 3 quêtes",named("Bois du jour","2/16"),"ok","1 quête, 1 compteur");
+frame("APRÈS t = 1,5 s",named("La requête du bûcheron","2/20"),"ok","2e quête à son tour");
+frame("APRÈS t = 3 s",named("Le stock de Tania","2/20"),"ok","3e quête à son tour");
+frame("APRÈS t = 4,5 s — l'XP attend son tour",[["+20 XP RPG","green"],[" (Quêtes)","gray"]],"ok","information seule");
+frame("APRÈS — titre très long, coupé sur le texte brut",named("La très longue quête du grand bû…","3/20"),"ok","tient sur l'écran minimal");
+frame("APRÈS — une seule quête active",[["Bûche de chêne","yellow"],[" 5/20","gray"]],"ok","forme courte inchangée");
+frame("APRÈS — pire cas compteur à 3 chiffres",named("La requête du bûcheron","120/150"),"ok","");
+</script></body></html>

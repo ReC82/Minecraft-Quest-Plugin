@@ -199,7 +199,16 @@ public final class TrackedQuestSummary {
 
     /** Titre en texte brut : jetons {@code %npc_name:…%} résolus (#475), balises retirées. */
     private static String plainTitle(QuestDefinition quest, Function<String, Optional<String>> npcNames) {
-        String resolved = NpcNameTokens.resolve(quest.title().base(), npcNames);
+        return plainTitle(quest.title().base(), npcNames);
+    }
+
+    /**
+     * Titre MiniMessage brut en texte brut : jetons {@code %npc_name:…%} résolus (#475), balises
+     * retirées. À raccourcir ou à insérer en {@code Placeholder.unparsed} : une balise ne peut alors
+     * ni être coupée en deux ni s'afficher en clair (#817, « {@code <gold>Bois...} »).
+     */
+    public static String plainTitle(String rawTitle, Function<String, Optional<String>> npcNames) {
+        String resolved = NpcNameTokens.resolve(rawTitle == null ? "" : rawTitle, npcNames);
         return MM.stripTags(resolved).replace("\\<", "<").strip();
     }
 
@@ -215,7 +224,7 @@ public final class TrackedQuestSummary {
     }
 
     /** Raccourcit {@code text} à {@code maxPx} (ellipse comprise), sans descendre sous {@link #MIN_TITLE_CHARS}. */
-    static String truncate(String text, int maxPx) {
+    public static String truncate(String text, int maxPx) {
         if (widthOf(text) <= maxPx) {
             return text;
         }

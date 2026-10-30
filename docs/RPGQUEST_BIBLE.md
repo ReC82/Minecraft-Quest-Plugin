@@ -927,23 +927,28 @@ issues #69 / #209 / #817). L'ActionBar n'affiche qu'une ligne : l'XP de combat d
 (Combat) », envoyée au tick suivant par `ProgressionService`) effaçait « Araignées : 3/10 » avant
 qu'on puisse le lire ; et une bûche qui compte pour trois quêtes produisait une ligne d'environ
 700 px (écran minimal : 320 px), où les récompenses d'une quête terminée semblaient appartenir à une
-autre (#817). Règle désormais :
+autre (#817). Une première correction (25/10) concaténait des titres abrégés sur une ligne : rejetée
+en jeu le 29/10 (« `Oak Log : <gold>Bois... 2/16, <gold>La re... 2/20` » — titre MiniMessage brut
+coupé avant d'être interprété, balises en clair, compteurs tronqués). Règle désormais (30/10) :
 
-- une progression d'objectif est **prioritaire** et reste affichée **2 s** ; plusieurs objectifs qui
-  avancent dans cette fenêtre sont **regroupés**, au plus **3** (les plus récents) ;
-- une seule quête concernée : `quest.objective-progress` (« Bûche de chêne 5/20 ») ;
-- plusieurs quêtes : le libellé de l'objectif **une seule fois**, puis une entrée courte par quête
-  (`quest.objective-progress-entry`, titre abrégé à 12 caractères) — « Bûche de chêne : Bois du jour
-  19/20, Le stock 7/20 » ;
-- la ligne ne dépasse jamais **300 px estimés** (même budget que la bossbar #71, tout facteur GUI) :
-  titres raccourcis (10 puis 8 caractères), puis libellé commun retiré quand tous les compteurs
-  portent sur le même objectif (« La requête… 5/20, Le stock de… 7/20, Bois du jour 19/20 »), puis
-  les compteurs les plus anciens résumés en « +N » ;
-- un message d'information (XP, pièces) pendant la fenêtre n'est **plus collé** aux compteurs : il
-  est **mis en file** et affiché seul dès que la fenêtre se libère, au plus tard **2 s** après son
-  arrivée (les 2 plus récents, sans doublon). Hors fenêtre, il s'affiche seul immédiatement ;
-- une étape close, une quête terminée ou abandonnée **sort** de la ligne : son « 20/20 » ne revient
-  pas sur les progressions suivantes.
+- **une seule progression (ou une seule information) par ligne**, jamais de concaténation ;
+- chaque ligne reste au moins **1,5 s** ; ce qui arrive entre-temps **attend son tour**, dans
+  l'ordre d'arrivée : une bûche qui compte pour trois quêtes montre les trois quêtes l'une après
+  l'autre ;
+- une seule quête en jeu : `quest.objective-progress` (« Bûche de chêne 5/20 ») ; dès que plusieurs
+  quêtes se partagent la série : `quest.objective-progress-named` (« Bois du jour · Bûche de chêne
+  2/16 »). Le titre y est du **texte brut** (jetons PNJ résolus, balises retirées **avant** toute
+  coupe, inséré sans être réinterprété) raccourci au pixel pour que la ligne tienne en **300 px
+  estimés** (écran minimal, tout facteur GUI, même budget que la bossbar #71) ;
+- un objectif déjà en attente est **mis à jour sur place** (sa dernière valeur, sa place gardée) ;
+  celui à l'écran est réaffiché aussitôt avec sa nouvelle valeur, **sans prolonger** son tour — une
+  récolte continue fait alterner les quêtes, aucune n'est affamée ;
+- aucune progression en attente n'est perdue : chacune est montrée au moins une fois avec sa
+  dernière valeur. Les informations (XP, pièces, niveau) attendent aussi leur tour, dédoublonnées,
+  les **3** plus récentes gardées ; une progression arrivée moins de 250 ms après une information
+  (même kill, #69) passe devant elle, l'information suit ;
+- une quête terminée ou abandonnée **sort de la file** (son titre de fin et son bilan chat prennent
+  le relais) ; l'objectif d'une nouvelle étape est un autre objectif.
 
 Les valeurs viennent du moteur **après** mutation : aucun compteur parallèle, aucun message pour un
 kill qui ne fait rien progresser, aucun compteur dans le chat.

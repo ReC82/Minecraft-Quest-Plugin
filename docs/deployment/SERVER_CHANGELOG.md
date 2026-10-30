@@ -49,6 +49,21 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-30 - Plugin : ActionBar multi-quêtes, une quête par ligne (#817 rév. 2, TC-430) — NON DÉPLOYÉ
+
+### Changement
+
+Après le rejet de TC-430 (29/10 : balises `<gold>` en clair, compteurs concaténés tronqués), l'ActionBar montre
+une progression par ligne, chaque quête à son tour (≥ 1,5 s), titre en texte brut raccourci au pixel. Le
+`messages.yml` du serveur garde `quest.objective-progress-entry` (devenue inutile, sans effet) ; la ligne
+utilise `quest.objective-progress-named`, déjà présente.
+
+### Action serveur
+
+À faire **seulement sur OK écrit du propriétaire** : remplacement du JAR RPGQuest (scripts officiels,
+sauvegarde JAR + `data.db`), redémarrage DEV. Aucune migration, aucune configuration, aucune donnée joueur.
+Rollback : JAR précédent.
+
 ## 2026-10-30 - Atelier : toit `gable` en verre sans états d'escalier (#747, TC-448) — NON DÉPLOYÉ
 
 ### Changement

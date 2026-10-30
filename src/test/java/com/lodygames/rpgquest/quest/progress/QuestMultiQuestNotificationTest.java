@@ -64,7 +64,10 @@ class QuestMultiQuestNotificationTest {
     private QuestProgressEngine engine;
     private Path questsDir;
     private final AtomicLong now = new AtomicLong(10_000_000L);
-    private final List<Runnable> scheduled = new ArrayList<>();
+    private final List<Task> scheduled = new ArrayList<>();
+
+    private record Task(long at, Runnable task) {
+    }
     private World world;
 
     /** PlayerMock ne mémorise pas les Title Adventure : on les enregistre ici. */
@@ -91,10 +94,11 @@ class QuestMultiQuestNotificationTest {
 
         questsDir = tempDir.resolve("quests");
         Files.createDirectories(questsDir);
-        writeLogQuest(BOB, "La requête du bûcheron", 20);
-        writeLogQuest(TANIA, "Le stock de Tania", 20);
-        writeLogQuest(DAILY, "Bois du jour", 2);
-        writeLogQuest(OTHER_DAILY, "Bois du soir", 2);
+        // Titres colorés comme sur DEV : la capture du 29/10 montrait « <gold>Bois... » en clair.
+        writeLogQuest(BOB, "<gold>La requête du bûcheron</gold>", 20);
+        writeLogQuest(TANIA, "<yellow>Le stock de Tania", 20);
+        writeLogQuest(DAILY, "<gold>Bois du jour", 2);
+        writeLogQuest(OTHER_DAILY, "<green><bold>Bois du soir", 2);
         YamlQuestEngine questEngine = new YamlQuestEngine(questsDir, plugin.getSLF4JLogger());
         questEngine.reload();
 
@@ -105,8 +109,8 @@ class QuestMultiQuestNotificationTest {
                 new PlayerVariableRepository(database), messagesService,
                 new NpcIdentityService(plugin, new NpcIdRepository(database), new NpcBindingRepository(database)),
                 QuestRewardPayer.unavailable());
-        engine.setActionBar(new ActionBarFeedback(now::get, (task, delay) -> scheduled.add(task)));
-        engine.setTitleQueue(new QuestTitleQueue(now::get, (task, delay) -> scheduled.add(task)));
+        engine.setActionBar(new ActionBarFeedback(now::get, (task, delay) -> scheduled.add(new Task(now.get() + delay, task))));
+        engine.setTitleQueue(new QuestTitleQueue(now::get, (task, delay) -> scheduled.add(new Task(now.get() + delay, task))));
         engine.start();
         world = server.addSimpleWorld("wild");
     }
@@ -119,22 +123,30 @@ class QuestMultiQuestNotificationTest {
     }
 
     @Test
-    void oneLogProgressingThreeQuestsGivesOneShortLineAttributingEachCounter() throws Exception {
+    void oneLogProgressingThreeQuestsShowsEachQuestOnItsOwnReadableLine() throws Exception {
         RecordingPlayer player = playerWith(BOB, TANIA, DAILY);
 
         breakLog(player);
+        advance(4 * ActionBarFeedback.SLOT_MILLIS);
 
-        String line = lastActionBar(player);
-        assertTrue(line.contains("La requête… 1/20"), line);
-        assertTrue(line.contains("Le stock de… 1/20"), line);
-        assertTrue(line.contains("Bois du jour 1/2"), line);
-        assertFalse(line.contains("+"), () -> "aucun compteur masqué pour trois quêtes : " + line);
+        List<String> lines = counterLines(player);
+        assertTrue(lines.stream().anyMatch(l -> l.startsWith("La requête du bûcheron · ") && l.endsWith(" 1/20")),
+                lines::toString);
+        assertTrue(lines.stream().anyMatch(l -> l.startsWith("Le stock de Tania · ") && l.endsWith(" 1/20")),
+                lines::toString);
+        assertTrue(lines.stream().anyMatch(l -> l.startsWith("Bois du jour · ") && l.endsWith(" 1/2")),
+                lines::toString);
+        for (String line : lines) {
+            assertFalse(line.contains("<") || line.contains(">"), () -> "balise en clair : " + line);
+            assertEquals(1, line.split("\\d+/\\d+", -1).length - 1, () -> "une progression par ligne : " + line);
+        }
     }
 
     @Test
     void aCompletedQuestIsAnnouncedWithItsRewardsAndItsCounterDoesNotComeBack() throws Exception {
         RecordingPlayer player = playerWith(BOB, TANIA, DAILY);
         breakLog(player);
+        advance(4 * ActionBarFeedback.SLOT_MILLIS);
         breakLog(player); // Bois du jour 2/2 : terminée
 
         assertEquals(QuestState.COMPLETED, state(player, DAILY));
@@ -142,11 +154,14 @@ class QuestMultiQuestNotificationTest {
         List<String> chat = drainChat(player);
         assertTrue(chat.stream().anyMatch(m -> m.contains("Quête terminée") && m.contains("Bois du jour")),
                 () -> "le bilan de la quête terminée part dans le chat, attribué : " + chat);
+        advance(4 * ActionBarFeedback.SLOT_MILLIS);
+        counterLines(player);
 
         breakLog(player);
-        String line = lastActionBar(player);
-        assertFalse(line.contains("Bois du jour"), () -> "compteur périmé d'une quête terminée : " + line);
-        assertTrue(line.contains("3/20"), line);
+        advance(4 * ActionBarFeedback.SLOT_MILLIS);
+        List<String> lines = counterLines(player);
+        assertFalse(lines.stream().anyMatch(l -> l.contains("Bois du jour")), () -> "quête terminée revenue : " + lines);
+        assertTrue(lines.stream().anyMatch(l -> l.endsWith(" 3/20")), lines::toString);
     }
 
     @Test
@@ -160,8 +175,7 @@ class QuestMultiQuestNotificationTest {
         assertTrue(chat.stream().anyMatch(m -> m.contains("Bois du jour")), chat::toString);
         assertTrue(chat.stream().anyMatch(m -> m.contains("Bois du soir")), chat::toString);
 
-        now.addAndGet(3_000);
-        new ArrayList<>(scheduled).forEach(Runnable::run);
+        advance(3_000);
 
         assertEquals(2, player.titles.size(), () -> "les deux fins sont annoncées : " + player.titles);
     }
@@ -171,11 +185,16 @@ class QuestMultiQuestNotificationTest {
         RecordingPlayer player = playerWith(BOB, TANIA);
         for (int i = 0; i < 10; i++) {
             breakLog(player);
-            now.addAndGet(400);
+            advance(400);
         }
+        advance(3 * ActionBarFeedback.SLOT_MILLIS);
 
         assertEquals(List.of(), drainChat(player), "un compteur ne va jamais dans le chat");
-        assertTrue(lastActionBar(player).contains("10/20"));
+        List<String> lines = counterLines(player);
+        assertTrue(lines.stream().anyMatch(l -> l.startsWith("La requête du bûcheron") && l.endsWith(" 10/20")),
+                lines::toString);
+        assertTrue(lines.stream().anyMatch(l -> l.startsWith("Le stock de Tania") && l.endsWith(" 10/20")),
+                lines::toString);
     }
 
     // ---- Outils ---------------------------------------------------------------------------------
@@ -204,19 +223,32 @@ class QuestMultiQuestNotificationTest {
         server.getScheduler().performTicks(1);
     }
 
-    /**
-     * Dernière ligne de compteurs. Le plugin chargé par MockBukkit a son propre canal (son XP de
-     * récolte « +n XP RPG » y passe seule) : seules les lignes de ce moteur, avec un compteur, comptent.
-     */
-    private static String lastActionBar(PlayerMock player) {
-        String last = "";
+    /** Avance l'horloge et exécute les tâches échues des deux canaux, dans l'ordre. */
+    private void advance(long millis) {
+        long target = now.get() + millis;
+        while (true) {
+            Task next = scheduled.stream().filter(t -> t.at() <= target)
+                    .min((a, b) -> Long.compare(a.at(), b.at())).orElse(null);
+            if (next == null) {
+                break;
+            }
+            scheduled.remove(next);
+            now.set(Math.max(now.get(), next.at()));
+            next.task().run();
+        }
+        now.set(target);
+    }
+
+    /** Toutes les lignes de compteurs envoyées depuis le dernier appel. */
+    private static List<String> counterLines(PlayerMock player) {
+        List<String> lines = new ArrayList<>();
         for (Component next = player.nextActionBar(); next != null; next = player.nextActionBar()) {
             String line = PlainTextComponentSerializer.plainText().serialize(next);
             if (line.matches(".*\\d+/\\d+.*")) {
-                last = line;
+                lines.add(line);
             }
         }
-        return last;
+        return lines;
     }
 
     private static List<String> drainChat(PlayerMock player) {
@@ -225,14 +257,6 @@ class QuestMultiQuestNotificationTest {
             messages.add(PlainTextComponentSerializer.plainText().serialize(next));
         }
         return messages;
-    }
-
-    private static int countOccurrences(String text, String needle) {
-        int count = 0;
-        for (int i = text.indexOf(needle); i >= 0; i = text.indexOf(needle, i + needle.length())) {
-            count++;
-        }
-        return count;
     }
 
     private QuestState state(PlayerMock player, NamespacedKey quest) throws Exception {

@@ -14,6 +14,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 > `QUEST_STATE guard_tierN ACTIVE`, répliques alignées sur la fin automatique du palier ; « Les récompenses »
 > laissé intact dans le seed (retiré par le propriétaire sur DEV seulement). Aucune migration. TC-433.
 
+> **ActionBar multi-quêtes lisible, rev. 2 (#817, 30/10/2026)** — après le rejet de TC-430 du 29/10
+> (balises `<gold>` en clair, compteurs concaténés tronqués), `feedback.ActionBarFeedback` affiche **une
+> progression par ligne**, chacune à son tour (≥ 1,5 s), nommée dès que plusieurs quêtes se partagent la
+> série (`quest.objective-progress-named`, titre en texte brut via `TrackedQuestSummary.plainTitle`, coupé au
+> pixel pour 300 px). Objectif en attente mis à jour sur place, aucune progression perdue, infos (XP,
+> pièces) en file (3 max). Clé `quest.objective-progress-entry` abandonnée. Pas de migration. TC-430 rev. 2.
+> Remplace la règle de ligne courte ci-dessous.
+
 > **Notifications de plusieurs quêtes simultanées (#817, 25/10/2026)** — `feedback.ActionBarFeedback` :
 > une action qui fait progresser plusieurs quêtes donne une ligne courte (libellé une fois, titre abrégé
 > + compteur par quête, `quest.objective-progress-entry`), jamais plus large que 300 px estimés (titres

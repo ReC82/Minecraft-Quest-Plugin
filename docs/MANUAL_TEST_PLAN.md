@@ -9596,3 +9596,21 @@ de décor sans acquittement ; provenance `books-kept-as-decor` / `displayed-item
 (`accept_visual_loss` transmis seulement s'il est explicite), `AgentActionCatalogTest`, `BuildingLifecyclePageTest`
 (sections françaises, case requise, compatibilité avec un plugin antérieur). Non couvert sans serveur : le
 comportement réel de WorldEdit 7.4.1 / Paper 1.21.11 au collage (étape 3).
+
+### TC-448 — Atelier : toit `gable` en verre compilé sans états d'escalier (issue #747, retour du 29/10, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et PlugAdmin issus de `fix/747-gable-bloc-plein` (PR #931), **non déployés** à la livraison
+(déploiement DEV sur accord écrit du propriétaire). Aucun appel IA n'est nécessaire pour les étapes 1 et 2.
+
+1.  Atelier → projet « Maison du Botaniste » → ouvrir une version déjà produite le 29/10 (toit de serre
+    `gable minecraft:glass`) → « Vérifier ». **Attendu** : plus de « États de bloc refusés par le registre
+    Minecraft 1.21.11 » ni de `minecraft:glass[facing=…]` ; le verdict porte sur les vrais défauts du plan
+    (vitrages hors des murs, zone non éclairée…).
+2.  Aperçu de cette version. **Attendu** : le toit de la serre est en gradins de verre plein ; l'exigence
+    « Toiture en pente » n'est pas signalée manquante à cause du verre.
+3.  (À l'initiative du propriétaire, appel payant) « Améliorer avec l'IA » sur ce projet. **Attendu** : la
+    correction ne reboucle plus sur le même refus de registre.
+
+**Couverture automatisée** : `GableMaterial747Test` (verre, verre teinté, dalle, escalier, bloc inconnu refusé ;
+deux plans réels du botaniste rejoués : plus de `PLAN_INVALID`), `SteppedRoof747Test` (gradins pleins comptés,
+toit plat et parapet non).

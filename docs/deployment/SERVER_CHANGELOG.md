@@ -49,6 +49,21 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-30 - Atelier : toit `gable` en verre sans états d'escalier (#747, TC-448) — NON DÉPLOYÉ
+
+### Changement
+
+Plugin : un `gable` dont le matériau n'est pas un escalier reçoit l'état admis par le registre 1.21.11
+(dalle basse, ou état simple pour le verre) au lieu de `facing/half/shape/waterlogged` — fin des trois
+`PLAN_INVALID` de la maison du botaniste. PlugAdmin : la mesure « Toiture en pente » compte les gradins pleins ;
+une ligne de prompt signale qu'il n'existe pas d'escalier de verre.
+
+### Action serveur
+
+À faire **sur accord du propriétaire** : remplacement du JAR RPGQuest (scripts officiels, sauvegarde JAR +
+`data.db`), redémarrage DEV, et `scripts/plugadmin/deploy.sh` pour PlugAdmin. Aucune migration, aucune
+configuration, aucune donnée touchée. Rollback : JAR et PlugAdmin précédents (`c5f1c323` / `92d5c03d`).
+
 ## 2026-10-29 - Déploiement groupé : JAR `c5f1c323` (#917 + #734 + #903) et portail AWS
 
 ### Changement

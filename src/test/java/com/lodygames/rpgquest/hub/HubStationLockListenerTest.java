@@ -108,6 +108,18 @@ class HubStationLockListenerTest {
     }
 
     @Test
+    void claimsStationsAndResourceBlocksAreUnchanged() {
+        World claims = server.addSimpleWorld("world_claims");
+        PlayerMock player = playerIn(claims);
+        for (Material type : List.of(Material.CRAFTING_TABLE, Material.FURNACE, Material.ANVIL,
+                Material.BREWING_STAND, Material.SMOKER, Material.COMPOSTER, Material.ENCHANTING_TABLE)) {
+            PlayerInteractEvent event = click(player, blockAt(claims, type), EquipmentSlot.HAND);
+            assertNotEquals(Event.Result.DENY, event.useInteractedBlock(), type + " libre dans Claims");
+        }
+        assertEquals(0, evaluations.get(), "hors Hub, aucune exception n'est évaluée");
+    }
+
+    @Test
     void resourceBlocksAreClosedEvenWithACatchAllException() {
         exceptions.add(exception("tout", Set.of(), List.of(), List.of()));
         PlayerMock player = playerIn(hub);

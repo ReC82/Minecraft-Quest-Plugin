@@ -23,6 +23,7 @@ import org.bukkit.entity.WanderingTrader;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.inventory.InventoryPickupItemEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
@@ -47,6 +48,7 @@ class HubResourceLockListenerTest {
     private RPGQuestPlugin plugin;
     private World hub;
     private World wild;
+    private World claims;
     private Set<Entity> citizensNpcs;
     private HubResourceLockListener listener;
 
@@ -56,6 +58,7 @@ class HubResourceLockListenerTest {
         plugin = MockBukkit.load(RPGQuestPlugin.class);
         hub = server.addSimpleWorld("hub_675");
         wild = server.addSimpleWorld("world_wild");
+        claims = server.addSimpleWorld("world_claims");
         citizensNpcs = new java.util.HashSet<>();
         listener = new HubResourceLockListener(() -> HUB_CONFIG, citizensNpcs::contains, bypass, clock::get);
     }
@@ -208,6 +211,39 @@ class HubResourceLockListenerTest {
         otherHub.onInventoryMove(outsideHub);
         assertFalse(outsideHub.isCancelled());
 
+    }
+
+    @Test
+    void hoppersDoNotPickUpDroppedItemsInTheHubOnly() {
+        Inventory hubHopper = containerAt(hub, Material.HOPPER);
+        InventoryPickupItemEvent inHub = new InventoryPickupItemEvent(hubHopper,
+                hub.dropItem(new Location(hub, 0.5, 65, 0.5), new ItemStack(Material.EMERALD)));
+        listener.onHopperPickup(inHub);
+        assertTrue(inHub.isCancelled(), "aucun hopper du Hub n'aspire un objet au sol");
+
+        InventoryPickupItemEvent inWild = new InventoryPickupItemEvent(containerAt(wild, Material.HOPPER),
+                wild.dropItem(new Location(wild, 0.5, 65, 0.5), new ItemStack(Material.EMERALD)));
+        listener.onHopperPickup(inWild);
+        assertFalse(inWild.isCancelled(), "Wild inchangé");
+    }
+
+    // ---- Non-régression Claims ------------------------------------------------------------------------
+
+    @Test
+    void claimsTradingAndContainersAreUntouched() {
+        PlayerMock player = playerIn(claims);
+        Villager villager = claims.spawn(new Location(claims, 2, 64, 2), Villager.class);
+        PlayerInteractEntityEvent trade = new PlayerInteractEntityEvent(player, villager, EquipmentSlot.HAND);
+        listener.onInteractEntity(trade);
+        assertFalse(trade.isCancelled(), "commerce libre dans Claims");
+
+        for (Material type : new Material[] {Material.CHEST, Material.BARREL, Material.HOPPER}) {
+            InventoryOpenEvent open = new InventoryOpenEvent(player.openInventory(containerAt(claims, type)));
+            listener.onInventoryOpen(open);
+            player.closeInventory();
+            assertFalse(open.isCancelled(), type + " libre dans Claims");
+        }
+        assertNull(player.nextComponentMessage(), "aucun message de refus hors Hub");
     }
 
     // ---- Utilitaires ---------------------------------------------------------------------------------

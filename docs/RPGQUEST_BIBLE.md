@@ -1644,7 +1644,7 @@ un trou que personne ne relit. Elle écrit des **primitives**, au vocabulaire fe
 | `walls` | ne pose que les quatre murs verticaux : ni sol, ni plafond |
 | `clear` | **vide** la zone — creuse les pièces dans un volume déjà posé |
 | `pillars` | une colonne verticale tous les `spacing` blocs |
-| `gable` | toit à deux pentes ; l'orientation des marches est **calculée**. `fill:` donne le matériau des deux triangles de pignon |
+| `gable` | toit à deux pentes ; l'orientation des marches est **calculée**. `fill:` donne le matériau des deux triangles de pignon. Depuis #747 (30/10) : l'état des rangs suit le registre — escalier → marches orientées, dalle → dalle basse, autre bloc (verre, sans escalier en Minecraft) → état simple, toit en **gradins pleins** ; la mesure « Toiture en pente » le compte comme une pente |
 
 **Instructions d'architecture (issue #94, lot B)** — elles ne prennent **aucune coordonnée** : elles
 se placent sur une façade nommée, et le moteur calcule tout le reste.

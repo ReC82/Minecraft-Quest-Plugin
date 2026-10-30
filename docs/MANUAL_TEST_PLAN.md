@@ -8276,6 +8276,32 @@ coffres/tonneaux refusés sans perte de contenu ; fours/hauts fourneaux/fumoirs/
 plugin non concernés ; pots et étagères ; transferts de hopper refusés dans le Hub seulement),
 `RpgPermissionsMatrixTest` (le paquet testeur #64 n'a pas le nœud), `StorageLockedItemListenerTest`.
 
+### TC-449 — Hub : éjection redstone et véhicules à conteneur (issue #939, PENDING MANUAL VALIDATION)
+
+À ne faire **que si** le Hub contient déjà un de ces montages, ou avec un montage posé en session
+`/rpgadmin bypass on` par le propriétaire lui-même (la livraison ne pose, ne vide ni ne casse rien).
+Compte **joueur normal** pour les étapes 1 à 4.
+
+1.  Dropper du Hub contenant un objet, actionné par un bouton/levier. **Attendu** : rien n'est éjecté,
+    l'objet reste dans le dropper.
+2.  Distributeur du Hub avec un feu d'artifice (ou un seau d'eau) actionné. **Attendu** : le feu
+    d'artifice part / l'eau est posée puis reprise au signal suivant (fontaine conservée).
+    Même distributeur avec une flèche ou un objet ordinaire. **Attendu** : rien ne sort.
+3.  Frapper (coups répétés, en créatif aussi) un wagonnet à coffre ou un bateau à coffre du Hub, tirer
+    une flèche dessus. **Attendu** : le véhicule ne casse pas, rien ne tombe, message discret « Les
+    coffres du Hub sont fermés. » au plus une fois toutes les 2 s. Un wagonnet simple reste cassable
+    selon les règles habituelles.
+4.  Wild puis Claims : dropper actionné, wagonnet à coffre frappé. **Attendu** : comportement vanilla.
+5.  (Admin) `/rpgadmin bypass on` avec `rpgquest.admin.hub.resources` → casser le wagonnet à coffre du
+    Hub. **Attendu** : il casse (contenu au sol, comportement vanilla) ; `/rpgadmin bypass off` → de
+    nouveau protégé. Le dropper de l'étape 1 reste inerte même en bypass (la redstone n'a pas d'auteur).
+
+**Couverture automatisée** : `HubResourceLockListenerTest` (droppers et crafters refusés au Hub ;
+distributeurs décoratifs conservés, flèches/armures/cisailles/lave/os refusés ; Wild et Claims libres ;
+wagonnet à coffre, wagonnet-entonnoir et bateau à coffre protégés des coups, destructions et dégâts
+sans auteur, contenu conservé, un seul message ; véhicules simples non concernés ; bypass en session
+seulement, jamais pour une destruction sans auteur).
+
 ### TC-396 — Portails : construction liée — arche, zone de passage, liaison (issue #568, PENDING MANUAL VALIDATION)
 
 **Feu vert séparé du propriétaire requis avant l'étape 2** : l'autorisation du 20/10 n'autorise que des tests simulés —

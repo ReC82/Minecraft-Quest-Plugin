@@ -5903,6 +5903,15 @@ Règles appliquées (idempotentes) :
     du plugin, coffres personnels liés (#105) et coffre de l'Ender (stockage personnel). Wild et Claims
     inchangés. Bypass : `rpgquest.admin.hub.resources` (défaut `op`), **uniquement** pendant une session
     `/rpgadmin bypass on` (#35) — par ex. pour garnir un coffre de décor.
+    **Éjection redstone et véhicules à conteneur** (issue #939) : un dropper du Hub n'éjecte rien et un
+    crafter ne fabrique rien ; un distributeur ne s'actionne que pour un **usage décoratif** sans objet
+    ramassable — feu d'artifice, seau d'eau et seau vide (fontaines à bascule), boule de neige, boule de
+    feu ; tout autre objet (flèches, armures, outils, os, seau de lave, objets ordinaires…) reste dans le
+    bloc. La redstone n'ayant pas d'auteur, aucun bypass ne s'applique. Un wagonnet à coffre, un
+    wagonnet-entonnoir ou un bateau à coffre du Hub ne subit **ni dégât ni destruction** (joueur,
+    projectile, explosion, environnement) : ni lui ni son contenu ne tombent au sol. Bypass
+    `rpgquest.admin.hub.resources` en session pour un coup **porté par l'admin** seulement. Wagonnets et
+    bateaux simples, Wild et Claims inchangés.
 -   **postes de travail fermés par défaut** (issue #675, retour du 22/10, `hub.HubStationLockListener`) :
     établi, four, haut fourneau, fumoir, alambic, enclumes, meule, table de forgeron, tailleur de pierre,
     métier à tisser, table de cartographie, table d'enchantement et balise ne s'ouvrent pas (« Les postes

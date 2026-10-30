@@ -49,6 +49,21 @@ Procédure de retour arrière.
 ---
 
 
+## 2026-10-30 - Hub : éjection redstone et véhicules à conteneur verrouillés (#939, TC-449) — NON DÉPLOYÉ
+
+### Changement
+
+Dans le monde Hub (`hub.world`) seulement : droppers et crafters n'éjectent plus rien, distributeurs
+limités aux effets décoratifs (feux d'artifice, seaux d'eau/vides, boules de neige, boules de feu),
+wagonnets à coffre, wagonnets-entonnoirs et bateaux à coffre indestructibles. Verrou d'évènements :
+aucun bloc, entité ni inventaire n'est modifié. Wild et Claims inchangés.
+
+### Action serveur
+
+À faire **seulement sur OK écrit du propriétaire** : remplacement du JAR RPGQuest (scripts officiels,
+sauvegarde JAR + `data.db`), redémarrage DEV. Aucune migration, aucune configuration, aucune donnée joueur.
+Rollback : JAR précédent.
+
 ## 2026-10-30 - Plugin : ActionBar multi-quêtes, une quête par ligne (#817 rév. 2, TC-430) — NON DÉPLOYÉ
 
 ### Changement

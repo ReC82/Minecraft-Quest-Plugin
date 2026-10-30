@@ -4,14 +4,14 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import com.lodygames.rpgquest.ui.TrackedQuestSummary;
 import org.bukkit.entity.Player;
 
@@ -23,34 +23,34 @@ import org.bukkit.entity.Player;
  * <ul>
  *   <li>#69 / #209 — l'XP de combat envoyée au tick suivant effaçait la progression du kill avant
  *       qu'elle soit lisible ;</li>
- *   <li>#817 — une bûche qui compte pour trois quêtes produisait trois segments « Quête ·
- *       Objectif x/y » d'une quarantaine de caractères chacun : la ligne débordait de l'écran
- *       (petite résolution, grand facteur d'échelle). Les récompenses d'une quête terminée
- *       (« +20 XP RPG », « +5 LodyCoins ») étaient collées aux compteurs d'une autre et semblaient
- *       lui appartenir, et le compteur « 20/20 » d'une étape close revenait sur les lignes
- *       suivantes.</li>
+ *   <li>#817 — une bûche qui compte pour plusieurs quêtes produisait une ligne trop longue. La
+ *       première correction (25/10) concaténait des titres abrégés : rejetée en jeu le 29/10
+ *       (« {@code Oak Log : <gold>Bois... 2/16, <gold>La re... 2/20} ») — le titre MiniMessage
+ *       brut était coupé avant d'être interprété, ses balises s'affichaient en clair, et deux
+ *       compteurs tronqués sur une ligne restaient illisibles.</li>
  * </ul>
  *
- * <h2>La règle, explicite</h2>
+ * <h2>La règle, explicite : un message à la fois, chacun à son tour</h2>
  *
  * <ul>
- *   <li>une progression d'objectif est <strong>prioritaire</strong> et reste affichée
- *       {@value #HOLD_MILLIS} ms ; plusieurs objectifs qui progressent dans cette fenêtre sont
- *       <strong>regroupés</strong>, au plus {@value #MAX_PARTS}, les plus récents ;</li>
- *   <li>dès que la ligne concerne plusieurs quêtes, chaque compteur est <strong>attribué</strong> à
- *       sa quête sous une forme courte : le libellé de l'objectif une seule fois, puis le titre de
- *       chaque quête abrégé à {@value #SHORT_TITLE} caractères — « Bûche de chêne : Bois du jour
- *       19/20, Le stock de… 7/20 » ;</li>
- *   <li>la ligne ne dépasse jamais {@value #MAX_WIDTH_PX} px estimés (écran minimal, tout facteur
- *       GUI) : titres plus courts, puis libellé commun retiré, puis les compteurs les plus anciens
- *       résumés en « +N » ;</li>
- *   <li>un message d'information (XP, pièces) pendant cette fenêtre n'est <strong>plus collé</strong>
- *       aux compteurs : il est mis en file et affiché seul dès que la fenêtre se libère, au plus
- *       tard {@value #INFO_MAX_DELAY_MILLIS} ms après son arrivée ; la file garde les
- *       {@value #MAX_INFOS} plus récents, sans doublon. Rien d'essentiel n'y est perdu : le bilan
- *       d'une quête terminée part aussi dans le chat ;</li>
- *   <li>l'étape close ou la quête terminée/abandonnée est <strong>oubliée</strong> ({@link
- *       #forgetQuest}) : son ancien compteur ne réapparaît pas sur la ligne suivante.</li>
+ *   <li>une ligne ne porte <strong>jamais</strong> qu'une seule progression (ou une seule
+ *       information) ; aucune concaténation ;</li>
+ *   <li>chaque ligne reste au moins {@value #SLOT_MILLIS} ms ; les messages arrivés entre-temps
+ *       attendent leur tour, dans l'ordre d'arrivée — une bûche qui compte pour trois quêtes montre
+ *       les trois quêtes l'une après l'autre ;</li>
+ *   <li>dès que plusieurs quêtes se partagent le canal, chaque ligne nomme sa quête : « Bois du
+ *       jour · Bûche de chêne 2/16 ». Le titre est du <strong>texte brut</strong> (balises retirées
+ *       avant toute coupe, jamais réinterprété) raccourci au pixel pour que la ligne tienne en
+ *       {@value #MAX_WIDTH_PX} px — l'écran minimal de Minecraft, quel que soit le facteur GUI ;</li>
+ *   <li>un objectif déjà en attente est <strong>mis à jour sur place</strong> (il garde sa place,
+ *       affiche sa dernière valeur) ; celui qui est à l'écran est réaffiché tout de suite avec sa
+ *       nouvelle valeur, sans prolonger son tour — les autres quêtes ne sont jamais affamées ;</li>
+ *   <li>aucun événement n'est perdu : chaque progression en attente est affichée au moins une
+ *       fois avec sa dernière valeur. Les informations (XP, pièces, niveau) sont dédoublonnées et
+ *       les {@value #MAX_INFOS} plus récentes gardées ; le bilan d'une quête terminée part aussi
+ *       dans le chat ;</li>
+ *   <li>une progression qui arrive juste après une information (moins de {@value #PREEMPT_MILLIS}
+ *       ms, même événement) passe devant elle ; l'information est réaffichée ensuite (#69).</li>
  * </ul>
  *
  * <p>Aucun compteur n'est tenu ici : les valeurs viennent du moteur de quêtes après mutation. Ce
@@ -59,49 +59,67 @@ import org.bukkit.entity.Player;
  */
 public final class ActionBarFeedback {
 
-    /** Durée pendant laquelle une progression d'objectif garde la priorité. */
-    public static final long HOLD_MILLIS = 2_000L;
+    /** Durée minimale d'affichage d'une ligne avant de passer à la suivante. */
+    public static final long SLOT_MILLIS = 1_500L;
 
-    /** Nombre maximal d'objectifs regroupés sur une ligne : au-delà, elle deviendrait illisible. */
-    public static final int MAX_PARTS = 3;
+    /** Une progression remplace une information affichée depuis moins longtemps que ça. */
+    public static final long PREEMPT_MILLIS = 250L;
 
-    /** Longueur maximale d'un titre de quête sur une ligne multi-quêtes, points de suspension compris. */
-    public static final int SHORT_TITLE = 12;
-
-    /** Titres raccourcis davantage, dans cet ordre, tant que la ligne dépasse {@link #MAX_WIDTH_PX}. */
-    private static final int[] TITLE_LENGTHS = {SHORT_TITLE, 10, 8};
-
-    /**
-     * Largeur maximale estimée de la ligne : comme la bossbar (#71), elle tient sur l'écran minimal
-     * de Minecraft (320 px mis à l'échelle, quel que soit le facteur GUI) sans recouvrir le chat.
-     */
+    /** Largeur maximale de la ligne (écran minimal, tout facteur GUI), comme la bossbar (#71). */
     public static final int MAX_WIDTH_PX = TrackedQuestSummary.MAX_WIDTH_PX;
 
-    /** Délai maximal d'attente d'une information derrière des compteurs. */
-    public static final long INFO_MAX_DELAY_MILLIS = HOLD_MILLIS;
+    /**
+     * Marge retirée du budget du titre : le libellé de l'objectif est souvent traduit côté client et
+     * son estimation serveur reste approchée (« oak_log » estimé à 60 px, « Bûche de chêne » en fait
+     * 75 px). Sans elle, un titre très long laisserait la ligne réelle à 318 px sur 320.
+     */
+    static final int TITLE_MARGIN_PX = 20;
 
-    /** Nombre d'informations en file conservées (les plus récentes). */
-    public static final int MAX_INFOS = 2;
-
-    private static final Component SEPARATOR = Component.text("  ·  ", NamedTextColor.DARK_GRAY);
-    private static final Component LIST_SEPARATOR = Component.text(", ", NamedTextColor.DARK_GRAY);
-    private static final Component LABEL_SEPARATOR = Component.text(" : ", NamedTextColor.GRAY);
+    /** Nombre d'informations en attente conservées (les plus récentes). */
+    public static final int MAX_INFOS = 3;
 
     /**
      * Progression d'un objectif, déjà mise en forme par le moteur ({@code messages.yml}).
-     * {@code questKey} identifie la quête (attribution et {@link #forgetQuest}), {@code objectiveKey}
-     * l'objectif (quête + étape + rang). {@code alone} est la forme d'une ligne à une seule quête
-     * (« Bûche de chêne 5/20 ») ; {@code entry} celle d'une ligne à plusieurs quêtes, sans libellé
-     * (« Bois du jour 5/20 ») qui reçoit le titre déjà abrégé, regroupée sous {@code objective}.
+     * {@code questKey} identifie la quête, {@code objectiveKey} l'objectif (quête + étape + rang).
+     * {@code alone} est la ligne d'une quête seule (« Bûche de chêne 5/20 ») ; {@code named} celle
+     * d'une quête parmi plusieurs, qui reçoit le titre en texte brut déjà raccourci (« Bois du jour ·
+     * Bûche de chêne 5/20 »). {@code plainTitle} ne contient aucune balise MiniMessage.
      */
-    public record Progress(String questKey, String objectiveKey, String questTitle, Component objective,
-                           Component alone, Function<String, Component> entry) {
+    public record Progress(String questKey, String objectiveKey, String plainTitle,
+                           Component alone, Function<String, Component> named) {
+    }
+
+    /** Un message en attente ou à l'écran : une progression ou une information. */
+    private record Slot(String key, Progress progress, Component info) {
+
+        static Slot of(Progress progress) {
+            return new Slot("objective:" + progress.objectiveKey(), progress, null);
+        }
+
+        static Slot of(Component info) {
+            return new Slot("info:" + System.identityHashCode(info) + ":" + info.hashCode(), null, info);
+        }
+
+        boolean isInfo() {
+            return progress == null;
+        }
+    }
+
+    /** La file d'un joueur : ce qui est à l'écran et ce qui attend son tour. */
+    private static final class Rotation {
+        Consumer<Component> send;
+        BooleanSupplier online;
+        Slot current;
+        long shownAt;
+        long generation;
+        /** Plusieurs quêtes se partagent le canal depuis le début de cette série : on les nomme. */
+        boolean named;
+        final LinkedHashMap<String, Slot> waiting = new LinkedHashMap<>();
     }
 
     private final LongSupplier clock;
     private final BiConsumer<Runnable, Long> later;
-    private final Map<UUID, Held> held = new ConcurrentHashMap<>();
-    private final Map<UUID, Pending> pending = new ConcurrentHashMap<>();
+    private final Map<UUID, Rotation> rotations = new ConcurrentHashMap<>();
 
     /**
      * @param later planifie une tâche sur le thread principal après le délai donné en millisecondes
@@ -111,199 +129,163 @@ public final class ActionBarFeedback {
         this.later = later;
     }
 
-    /** Les progressions encore affichées pour un joueur. */
-    private record Held(LinkedHashMap<String, Progress> parts, long until) {
-    }
-
-    /** Les informations en attente d'une fenêtre libre. */
-    private record Pending(Player player, List<Component> infos, long deadline) {
-    }
-
-    /** Affiche la progression d'un objectif. */
+    /** Affiche la progression d'un objectif, maintenant ou à son tour. */
     public void objective(Player player, Progress progress) {
-        player.sendActionBar(composeObjective(player.getUniqueId(), progress));
+        objective(player.getUniqueId(), player::sendActionBar, player::isOnline, progress);
     }
 
-    /** Affiche une information de moindre priorité (XP, pièces) sans écraser une progression récente. */
+    /** Affiche une information de moindre priorité (XP, pièces), maintenant ou à son tour. */
     public void info(Player player, Component message) {
-        UUID playerId = player.getUniqueId();
-        Optional<Component> now = composeInfo(playerId, player, message);
-        if (now.isPresent()) {
-            player.sendActionBar(now.get());
-        }
+        info(player.getUniqueId(), player::sendActionBar, player::isOnline, message);
     }
 
-    /** L'étape de {@code questKey} est close (ou la quête terminée/abandonnée) : ses compteurs sortent. */
+    /**
+     * La quête est terminée ou abandonnée : ses progressions encore en attente sortent de la file
+     * (le titre de fin et le bilan du chat prennent le relais). Celle à l'écran finit son tour.
+     */
     public void forgetQuest(UUID playerId, String questKey) {
-        held.computeIfPresent(playerId, (id, current) -> {
-            LinkedHashMap<String, Progress> parts = new LinkedHashMap<>(current.parts());
-            parts.values().removeIf(part -> part.questKey().equals(questKey));
-            return parts.isEmpty() ? null : new Held(parts, current.until());
-        });
+        Rotation rotation = rotations.get(playerId);
+        if (rotation != null) {
+            rotation.waiting.values().removeIf(slot -> !slot.isInfo() && slot.progress().questKey().equals(questKey));
+        }
     }
 
-    Component composeObjective(UUID playerId, Progress progress) {
+    void objective(UUID playerId, Consumer<Component> send, BooleanSupplier online, Progress progress) {
         long now = clock.getAsLong();
-        // Purge des fenêtres échues : la table ne dépasse jamais le nombre de joueurs récemment
-        // notifiés, même après des déconnexions.
-        held.entrySet().removeIf(entry -> now >= entry.getValue().until());
-        Held current = active(playerId, now).orElse(null);
-        LinkedHashMap<String, Progress> parts = current == null ? new LinkedHashMap<>()
-                : new LinkedHashMap<>(current.parts());
-        // Réinsérer en fin : l'objectif qui vient de bouger devient le plus récent.
-        parts.remove(progress.objectiveKey());
-        parts.put(progress.objectiveKey(), progress);
-        while (parts.size() > MAX_PARTS) {
-            parts.remove(parts.keySet().iterator().next());
+        Rotation rotation = rotation(playerId, send, online);
+        Slot slot = Slot.of(progress);
+        boolean showing = isShowing(rotation, now);
+        if (showing && rotation.current.key().equals(slot.key())) {
+            // Même objectif à l'écran : nouvelle valeur tout de suite, sans prolonger son tour.
+            rotation.current = slot;
+            updateNaming(rotation);
+            display(rotation);
+            return;
         }
-        held.put(playerId, new Held(parts, now + HOLD_MILLIS));
-        return render(new ArrayList<>(parts.values()));
+        if (showing && rotation.current.isInfo() && now - rotation.shownAt < PREEMPT_MILLIS) {
+            // #69 : l'XP du même kill est arrivée en premier ; la progression passe devant.
+            requeueFirst(rotation, rotation.current);
+            show(rotation, slot, now);
+            return;
+        }
+        if (!showing) {
+            showNow(rotation, slot, now);
+            return;
+        }
+        rotation.waiting.put(slot.key(), slot); // déjà en attente : mis à jour sur place
+        if (updateNaming(rotation)) {
+            display(rotation);
+        }
+    }
+
+    void info(UUID playerId, Consumer<Component> send, BooleanSupplier online, Component message) {
+        long now = clock.getAsLong();
+        Rotation rotation = rotation(playerId, send, online);
+        if (!isShowing(rotation, now)) {
+            showNow(rotation, Slot.of(message), now);
+            return;
+        }
+        if (rotation.current.isInfo() && rotation.current.info().equals(message)) {
+            return;
+        }
+        rotation.waiting.values().removeIf(slot -> slot.isInfo() && slot.info().equals(message));
+        Slot slot = Slot.of(message);
+        rotation.waiting.put(slot.key(), slot);
+        List<Slot> infos = rotation.waiting.values().stream().filter(Slot::isInfo).toList();
+        for (int i = 0; i < infos.size() - MAX_INFOS; i++) {
+            rotation.waiting.remove(infos.get(i).key());
+        }
+    }
+
+    /** Nombre de messages en attente pour ce joueur (tests et diagnostic). */
+    int waiting(UUID playerId) {
+        Rotation rotation = rotations.get(playerId);
+        return rotation == null ? 0 : rotation.waiting.size();
+    }
+
+    private Rotation rotation(UUID playerId, Consumer<Component> send, BooleanSupplier online) {
+        Rotation rotation = rotations.computeIfAbsent(playerId, id -> new Rotation());
+        rotation.send = send;
+        rotation.online = online;
+        return rotation;
+    }
+
+    private static boolean isShowing(Rotation rotation, long now) {
+        return rotation.current != null && now - rotation.shownAt < SLOT_MILLIS;
     }
 
     /**
-     * Rend la ligne à afficher tout de suite, ou rien si l'information est mise en file derrière des
-     * compteurs ; dans ce cas, une vérification est planifiée.
+     * Le tour précédent est fini mais sa suite n'a pas encore été planifiée (arrondi au tick) : ce
+     * qui attendait passe d'abord, le nouveau message prend sa place dans la file.
      */
-    Optional<Component> composeInfo(UUID playerId, Player player, Component message) {
-        long now = clock.getAsLong();
-        Optional<Held> current = active(playerId, now);
-        if (current.isEmpty()) {
-            return Optional.of(message);
+    private void showNow(Rotation rotation, Slot slot, long now) {
+        if (rotation.waiting.isEmpty()) {
+            show(rotation, slot, now);
+            return;
         }
-        Pending existing = pending.get(playerId);
-        List<Component> infos = existing == null ? new ArrayList<>() : new ArrayList<>(existing.infos());
-        infos.remove(message);
-        infos.add(message);
-        while (infos.size() > MAX_INFOS) {
-            infos.remove(0);
-        }
-        long deadline = existing == null ? now + INFO_MAX_DELAY_MILLIS : existing.deadline();
-        pending.put(playerId, new Pending(player, infos, deadline));
-        if (existing == null) {
-            scheduleFlush(playerId, Math.min(current.get().until(), deadline) - now);
-        }
-        return Optional.empty();
+        rotation.waiting.put(slot.key(), slot);
+        Slot next = rotation.waiting.values().iterator().next();
+        rotation.waiting.remove(next.key());
+        show(rotation, next, now);
     }
 
-    /**
-     * Les informations en file, si leur tour est venu (fenêtre libérée ou délai maximal atteint) ;
-     * sinon une nouvelle vérification est planifiée.
-     */
-    Optional<Component> flushDue(UUID playerId) {
-        Pending waiting = pending.get(playerId);
-        if (waiting == null) {
-            return Optional.empty();
-        }
-        long now = clock.getAsLong();
-        Optional<Held> current = active(playerId, now);
-        if (current.isPresent() && now < waiting.deadline()) {
-            scheduleFlush(playerId, Math.min(current.get().until(), waiting.deadline()) - now);
-            return Optional.empty();
-        }
-        pending.remove(playerId, waiting);
-        return Optional.of(join(waiting.infos()));
+    private void show(Rotation rotation, Slot slot, long now) {
+        rotation.current = slot;
+        rotation.shownAt = now;
+        updateNaming(rotation);
+        display(rotation);
+        long generation = ++rotation.generation;
+        later.accept(() -> advance(rotation, generation), SLOT_MILLIS);
     }
 
-    private void scheduleFlush(UUID playerId, long delayMillis) {
-        later.accept(() -> {
-            Pending waiting = pending.get(playerId);
-            Optional<Component> line = flushDue(playerId);
-            if (line.isPresent() && waiting != null && waiting.player().isOnline()) {
-                waiting.player().sendActionBar(line.get());
-            }
-        }, Math.max(1L, delayMillis));
-    }
-
-    private Optional<Held> active(UUID playerId, long now) {
-        Held current = held.get(playerId);
-        if (current == null) {
-            return Optional.empty();
+    /** Fin du tour : le message suivant, ou la fin de la série. */
+    private void advance(Rotation rotation, long generation) {
+        if (rotation.generation != generation) {
+            return; // un affichage plus récent a reprogrammé la suite
         }
-        if (now >= current.until()) {
-            held.remove(playerId, current);
-            return Optional.empty();
+        if (!rotation.online.getAsBoolean() || rotation.waiting.isEmpty()) {
+            rotation.current = null;
+            rotation.waiting.clear();
+            rotation.named = false;
+            rotations.values().remove(rotation);
+            return;
         }
-        return Optional.of(current);
+        Slot next = rotation.waiting.values().iterator().next();
+        rotation.waiting.remove(next.key());
+        show(rotation, next, clock.getAsLong());
     }
 
-    /**
-     * Une seule quête : « Bûche de chêne 5/20 ». Plusieurs : un groupe par libellé d'objectif,
-     * chaque compteur précédé du titre court de sa quête. Si la ligne dépasse {@link #MAX_WIDTH_PX},
-     * dans l'ordre : titres plus courts, libellé commun retiré (le joueur vient de faire l'action),
-     * puis les compteurs les plus anciens remplacés par « +N » — jamais une ligne hors de l'écran.
-     */
-    private static Component render(List<Progress> parts) {
-        boolean severalQuests = parts.stream().map(Progress::questKey).distinct().count() > 1;
-        Component line = Component.empty();
-        for (int keep = parts.size(); keep >= 1; keep--) {
-            List<Progress> kept = parts.subList(parts.size() - keep, parts.size());
-            int hidden = parts.size() - keep;
-            if (!severalQuests) {
-                line = withHidden(join(kept.stream().map(Progress::alone).toList()), hidden);
-                if (fits(line)) {
-                    return line;
-                }
-                continue;
-            }
-            for (boolean labelled : new boolean[] {true, false}) {
-                for (int length : TITLE_LENGTHS) {
-                    line = withHidden(severalQuests(kept, length, labelled), hidden);
-                    if (fits(line)) {
-                        return line;
-                    }
-                }
-            }
+    private static void requeueFirst(Rotation rotation, Slot slot) {
+        LinkedHashMap<String, Slot> rest = new LinkedHashMap<>(rotation.waiting);
+        rotation.waiting.clear();
+        rotation.waiting.put(slot.key(), slot);
+        rest.forEach(rotation.waiting::putIfAbsent);
+    }
+
+    /** Passe en lignes nommées dès que deux quêtes se partagent la série ; vrai si ça vient de changer. */
+    private static boolean updateNaming(Rotation rotation) {
+        if (rotation.named) {
+            return false;
         }
-        return line;
+        List<Slot> slots = new ArrayList<>(rotation.waiting.values());
+        slots.add(rotation.current);
+        rotation.named = slots.stream().filter(slot -> slot != null && !slot.isInfo())
+                .map(slot -> slot.progress().questKey()).distinct().count() > 1;
+        return rotation.named;
     }
 
-    private static Component severalQuests(List<Progress> parts, int titleLength, boolean labelled) {
-        LinkedHashMap<Component, List<Component>> byObjective = new LinkedHashMap<>();
-        for (Progress part : parts) {
-            byObjective.computeIfAbsent(part.objective(), key -> new ArrayList<>())
-                    .add(part.entry().apply(shortTitle(part.questTitle(), titleLength)));
+    private static void display(Rotation rotation) {
+        Slot slot = rotation.current;
+        rotation.send.accept(slot.isInfo() ? slot.info() : render(slot.progress(), rotation.named));
+    }
+
+    /** La ligne d'une progression : seule, ou nommée avec le titre raccourci au pixel près. */
+    static Component render(Progress progress, boolean named) {
+        if (!named) {
+            return progress.alone();
         }
-        // Sans libellé seulement si tous les compteurs portent sur le même objectif : sinon on ne
-        // saurait plus de quoi parle chaque compteur.
-        boolean withLabel = labelled || byObjective.size() > 1;
-        List<Component> groups = new ArrayList<>();
-        byObjective.forEach((objective, entries) -> {
-            Component group = withLabel ? objective.colorIfAbsent(NamedTextColor.YELLOW).append(LABEL_SEPARATOR)
-                    : Component.empty();
-            for (int i = 0; i < entries.size(); i++) {
-                group = (i > 0 ? group.append(LIST_SEPARATOR) : group).append(entries.get(i));
-            }
-            groups.add(group);
-        });
-        return join(groups);
-    }
-
-    private static Component withHidden(Component line, int hidden) {
-        return hidden == 0 ? line : line.append(Component.text(" +" + hidden, NamedTextColor.DARK_GRAY));
-    }
-
-    private static boolean fits(Component line) {
-        return TrackedQuestSummary.estimatedWidthOf(line) <= MAX_WIDTH_PX;
-    }
-
-    /** Titre de quête abrégé à {@code max} caractères au plus, points de suspension compris. */
-    static String shortTitle(String title, int max) {
-        String trimmed = title == null ? "" : title.strip();
-        if (trimmed.codePointCount(0, trimmed.length()) <= max) {
-            return trimmed;
-        }
-        int end = trimmed.offsetByCodePoints(0, max - 1);
-        return trimmed.substring(0, end).stripTrailing() + "…";
-    }
-
-    private static Component join(List<Component> parts) {
-        Component line = Component.empty();
-        for (int i = 0; i < parts.size(); i++) {
-            if (i > 0) {
-                line = line.append(SEPARATOR);
-            }
-            line = line.append(parts.get(i));
-        }
-        return line;
+        int budget = MAX_WIDTH_PX - TITLE_MARGIN_PX
+                - TrackedQuestSummary.estimatedWidthOf(progress.named().apply(""));
+        return progress.named().apply(TrackedQuestSummary.truncate(progress.plainTitle(), budget));
     }
 }

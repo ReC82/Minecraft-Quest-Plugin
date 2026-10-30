@@ -1525,8 +1525,6 @@ public final class QuestProgressEngine implements PluginService {
         }
 
         UUID playerId = player.getUniqueId();
-        // Issue #817 : l'étape est close — son compteur ne doit plus revenir sur l'action bar.
-        forgetActionBarCounters(playerId, quest.id());
         int nextIndex = progress.currentStepIndex() + 1;
         if (nextIndex < quest.steps().size()) {
             progress.advanceToStep(nextIndex);
@@ -2022,10 +2020,14 @@ public final class QuestProgressEngine implements PluginService {
                 Placeholder.unparsed("total", String.valueOf(total)));
         Component alone = messages.format("quest.objective-progress", Placeholder.component("objective", label), counts);
         if (actionBar != null) {
+            // #817 : titre en texte brut (balises retirées AVANT toute coupe) inséré sans être
+            // réinterprété — jamais « <gold>Bois... » à l'écran.
+            String plainTitle = com.lodygames.rpgquest.ui.TrackedQuestSummary.plainTitle(title, npcNames);
             actionBar.objective(player, new com.lodygames.rpgquest.feedback.ActionBarFeedback.Progress(
                     ref.questId().toString(), ref.questId() + "/" + ref.stepId() + "/" + ref.objectiveIndex(),
-                    title, label, alone, shortTitle -> messages.format("quest.objective-progress-entry",
-                            Placeholder.unparsed("quest", shortTitle), counts)));
+                    plainTitle, alone, shortTitle -> messages.format("quest.objective-progress-named",
+                            Placeholder.unparsed("quest", shortTitle), Placeholder.component("objective", label),
+                            counts)));
             return;
         }
         player.sendActionBar(named

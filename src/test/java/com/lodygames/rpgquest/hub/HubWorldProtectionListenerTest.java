@@ -14,6 +14,7 @@ import com.lodygames.rpgquest.zone.ZoneRegistry;
 import com.lodygames.rpgquest.zone.model.ZoneDefinition;
 import com.lodygames.rpgquest.zone.model.ZoneFlags;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -42,6 +43,7 @@ import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerBucketFillEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.world.EntitiesLoadEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.AfterEach;
@@ -434,6 +436,22 @@ class HubWorldProtectionListenerTest {
         listener.sweepAlreadyLoaded(other);
 
         assertFalse(creeper.isDead(), "le nettoyage est scoped au Hub uniquement");
+    }
+
+    @Test
+    void aWanderingTraderLoadedWithAHubChunkIsRemovedButNotElsewhere() {
+        // #675 : un marchand ambulant persisté avant la protection ne peut plus servir de commerce.
+        var trader = hub.spawn(new Location(hub, 0.5, 64, 0.5), WanderingTrader.class);
+        var llama = hub.spawn(new Location(hub, 1.5, 64, 0.5), TraderLlama.class);
+        var cow = hub.spawn(new Location(hub, 2.5, 64, 0.5), Cow.class);
+        listener.onEntitiesLoad(new EntitiesLoadEvent(trader.getLocation().getChunk(), List.of(trader, llama, cow)));
+        assertTrue(trader.isDead(), "marchand ambulant retiré au chargement du chunk");
+        assertTrue(llama.isDead(), "lama de commerce retiré au chargement du chunk");
+        assertFalse(cow.isDead(), "un animal passif n'est jamais retiré");
+
+        var wildTrader = other.spawn(new Location(other, 0.5, 64, 0.5), WanderingTrader.class);
+        listener.onEntitiesLoad(new EntitiesLoadEvent(wildTrader.getLocation().getChunk(), List.of(wildTrader)));
+        assertFalse(wildTrader.isDead(), "hors Hub, le marchand ambulant reste");
     }
 
     // ---- Construction par monde, sans OP (issues #27/#200) ------------------------------------

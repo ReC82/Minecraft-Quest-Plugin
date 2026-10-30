@@ -537,7 +537,9 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   droppers, crafters, wagonnets/bateaux à coffre, pots décorés, étagères), hoppers inertes — verrouillage
   sans vidage, coffre de l'Ender/coffres personnels #105/interfaces RPGQuest libres,
   bypass `rpgquest.admin.hub.resources` en session seulement (issue #675, `hub.HubResourceLockListener`,
-  PENDING MANUAL VALIDATION TC-397) ; postes de travail (établi, fours, alambic, enclumes, meule, forgeron,
+  PENDING MANUAL VALIDATION TC-397) ; droppers et crafters inertes, distributeurs limités aux usages
+  décoratifs (feux d'artifice, seaux d'eau/vides, boules de neige, boules de feu), wagonnets/bateaux à
+  coffre indestructibles (issue #939, même listener, PENDING MANUAL VALIDATION TC-449) ; postes de travail (établi, fours, alambic, enclumes, meule, forgeron,
   tailleur, métier à tisser, cartographie, enchantement, balise) fermés par défaut, blocs-ressources
   (composteur, jukebox, chaudrons, pots de fleurs, coffre des épreuves) fermés, livre de lutrin non
   prenable, exceptions `hub.stations.exceptions` (type/bloc/niveau RPG/conditions des portails, vide par

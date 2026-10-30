@@ -3,10 +3,12 @@ package com.lodygames.rpgquest.hub;
 import com.lodygames.rpgquest.config.HubConfig;
 import com.lodygames.rpgquest.item.InventoryTransfers;
 import com.lodygames.rpgquest.permission.AdminBypassMode;
+import java.util.Set;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Barrel;
 import org.bukkit.block.Block;
@@ -21,6 +23,7 @@ import org.bukkit.entity.AbstractVillager;
 import org.bukkit.entity.ChestBoat;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Vehicle;
 import org.bukkit.entity.minecart.HopperMinecart;
 import org.bukkit.entity.minecart.StorageMinecart;
 import org.bukkit.event.Cancellable;
@@ -28,12 +31,16 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.block.BlockDispenseEvent;
+import org.bukkit.event.block.CrafterCraftEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.inventory.InventoryPickupItemEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.vehicle.VehicleDamageEvent;
+import org.bukkit.event.vehicle.VehicleDestroyEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -54,6 +61,15 @@ import org.bukkit.inventory.MerchantInventory;
  *       un clic droit sur une bibliothèque sculptée, un pot décoré ou une étagère est annulé.</li>
  *   <li><strong>Automatisation</strong> : aucun hopper/dropper ne déplace d'objet entre inventaires
  *       du Hub et aucun hopper n'aspire d'objet au sol.</li>
+ *   <li><strong>Éjection redstone (#939)</strong> : un dropper n'éjecte rien, un crafter ne fabrique
+ *       rien ; un distributeur n'est actionné que pour un effet décoratif sans objet ramassable
+ *       ({@link #DECORATIVE_DISPENSES} : feux d'artifice, fontaines à eau, boules de neige, boules de
+ *       feu). Tout autre objet (flèches, armures, outils, objets ordinaires…) reste dans le bloc.
+ *       La redstone n'a pas d'auteur : aucun contournement ne s'applique.</li>
+ *   <li><strong>Véhicules à conteneur (#939)</strong> : un wagonnet à coffre, un wagonnet-entonnoir ou
+ *       un bateau à coffre du Hub ne subit ni dégât ni destruction (joueur, projectile, explosion,
+ *       environnement) : son contenu et le véhicule lui-même ne tombent jamais au sol. Les autres
+ *       véhicules (wagonnets et bateaux simples) ne sont pas concernés.</li>
  * </ul>
  *
  * <p><strong>Ce qui reste libre</strong> : coffre de l'Ender (stockage personnel),
@@ -71,6 +87,14 @@ public final class HubResourceLockListener implements Listener {
     static final String BYPASS_PERMISSION = "rpgquest.admin.hub.resources";
     static final String TRADE_REFUSED = "<gray>Le commerce n'est pas disponible dans le Hub.</gray>";
     static final String CONTAINER_REFUSED = "<gray>Les coffres du Hub sont fermés.</gray>";
+
+    /**
+     * Seuls objets qu'un distributeur du Hub peut utiliser : effet décoratif, aucun objet ramassable
+     * créé. Le seau vide reste autorisé pour les fontaines à bascule (seau d'eau ↔ seau vide).
+     */
+    static final Set<Material> DECORATIVE_DISPENSES = Set.of(
+            Material.FIREWORK_ROCKET, Material.WATER_BUCKET, Material.BUCKET,
+            Material.SNOWBALL, Material.FIRE_CHARGE);
 
     private final Supplier<HubConfig> config;
     private final Predicate<Entity> isCitizensNpc;
@@ -151,6 +175,52 @@ public final class HubResourceLockListener implements Listener {
         }
     }
 
+    // ---- Éjection redstone (#939) ------------------------------------------------------------------
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onDispense(BlockDispenseEvent event) {
+        Block block = event.getBlock();
+        if (isHub(block.getWorld()) && !isDecorativeDispense(block.getType(), event.getItem().getType())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onCrafterCraft(CrafterCraftEvent event) {
+        if (isHub(event.getBlock().getWorld())) {
+            event.setCancelled(true);
+        }
+    }
+
+    /** Un dropper n'a pas d'usage décoratif : il ne fait qu'éjecter. */
+    static boolean isDecorativeDispense(Material block, Material item) {
+        return block == Material.DISPENSER && DECORATIVE_DISPENSES.contains(item);
+    }
+
+    // ---- Véhicules à conteneur (#939) --------------------------------------------------------------
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onVehicleDamage(VehicleDamageEvent event) {
+        Player attacker = HubWorldProtectionListener.playerBehind(event.getAttacker());
+        if (isProtectedVehicle(event.getVehicle(), attacker)) {
+            refuse(event, attacker, CONTAINER_REFUSED);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.LOW)
+    public void onVehicleDestroy(VehicleDestroyEvent event) {
+        Player attacker = HubWorldProtectionListener.playerBehind(event.getAttacker());
+        if (isProtectedVehicle(event.getVehicle(), attacker)) {
+            refuse(event, attacker, null);
+        }
+    }
+
+    /** Véhicule à conteneur du Hub ; sans auteur (explosion, environnement), jamais de contournement. */
+    private boolean isProtectedVehicle(Vehicle vehicle, Player attacker) {
+        return vehicle instanceof InventoryHolder holder && isLockedStorage(holder) && isHub(vehicle.getWorld())
+                && (attacker == null || !isBypassing(attacker));
+    }
+
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         messages.forget(event.getPlayer().getUniqueId());
@@ -180,10 +250,10 @@ public final class HubResourceLockListener implements Listener {
         return bypass.allowsExact(player, BYPASS_PERMISSION);
     }
 
-    /** Annule l'évènement ; message éventuel, limité par {@link HubRefusalMessages}. */
+    /** Annule l'évènement ; message éventuel (joueur connu seulement), limité par {@link HubRefusalMessages}. */
     private void refuse(Cancellable event, Player player, String message) {
         event.setCancelled(true);
-        if (message != null) {
+        if (message != null && player != null) {
             messages.send(player, message);
         }
     }

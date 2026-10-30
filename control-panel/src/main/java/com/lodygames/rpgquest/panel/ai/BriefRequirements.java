@@ -457,7 +457,7 @@ public final class BriefRequirements {
 
     /**
      * #747 : le toit en pente demandé — une instruction « gable » dans le plan, et sur la grille compilée au
-     * moins {@link CompiledMeasures#PITCHED_PERCENT} % des colonnes coiffées d'un escalier ou d'une dalle.
+     * moins {@link CompiledMeasures#PITCHED_PERCENT} % des colonnes coiffées d'un escalier, d'une dalle ou d'un gradin.
      */
     private static Status roof(Requirement r, String planYaml, java.util.Optional<CompiledMeasures> measures) {
         Matcher op = OP.matcher(planYaml == null ? "" : planYaml);
@@ -473,7 +473,7 @@ public final class BriefRequirements {
         int[] c = measures.get().pitchedColumns();
         boolean realised = c[1] > 0 && c[0] * 100 >= c[1] * CompiledMeasures.PITCHED_PERCENT;
         return new Status(r, gables > 0, realised, gables + " instruction(s) « gable » ; " + c[0] + "/" + c[1]
-                + " colonnes coiffées d'un escalier ou d'une dalle (" + CompiledMeasures.PITCHED_PERCENT
+                + " colonnes coiffées d'un escalier, d'une dalle ou d'un gradin (" + CompiledMeasures.PITCHED_PERCENT
                 + " % attendus)");
     }
 

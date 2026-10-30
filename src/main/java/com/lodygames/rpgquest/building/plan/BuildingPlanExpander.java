@@ -969,8 +969,7 @@ public final class BuildingPlanExpander {
             BlockStates.Dir facing = alongX
                     ? (lowSide ? BlockStates.Dir.SOUTH : BlockStates.Dir.NORTH)
                     : (lowSide ? BlockStates.Dir.EAST : BlockStates.Dir.WEST);
-            String state = BlockStates.stairs(
-                    BlockStates.bareTypeOr(step.state(), "minecraft:oak_stairs"), facing, false);
+            String state = roofState(BlockStates.bareTypeOr(step.state(), "minecraft:oak_stairs"), facing);
             if (alongX) {
                 int z = box.minZ() + i;
                 for (int x = box.minX(); x <= box.maxX(); x++) {
@@ -994,6 +993,29 @@ public final class BuildingPlanExpander {
                 }
             }
         }
+    }
+
+    /**
+     * L'état d'un rang de toit, selon les propriétés que le registre connaît au matériau (#747, 29/10/2026).
+     *
+     * <p>Maison du botaniste (#658) : « gable minecraft:glass » recevait
+     * {@code facing/half/shape/waterlogged}, que le verre n'a pas — trois refus du registre de suite, trois
+     * appels payants pour rien, alors que le plan était constructible. Il n'existe pas d'escalier de verre :
+     * {@link PlanRepair#gableStairs} ne trouve rien à substituer. Un escalier garde ses marches orientées,
+     * une dalle devient une dalle basse, tout autre bloc reste à son état simple — le toit est alors en
+     * gradins pleins, fermé, et le contrôle du registre n'est pas affaibli pour autant.</p>
+     */
+    static String roofState(String material, BlockStates.Dir facing) {
+        BlockCatalog catalog = BlockCatalog.vanilla();
+        boolean stairs = catalog.hasProperty(material, "facing") && catalog.hasProperty(material, "half")
+                && catalog.hasProperty(material, "shape");
+        if (!catalog.known(material) || stairs) {
+            return BlockStates.stairs(material, facing, false);
+        }
+        if (catalog.hasProperty(material, "type") && material.endsWith("_slab")) {
+            return BlockStates.slab(material, false);
+        }
+        return material;
     }
 
     private interface CellAction {

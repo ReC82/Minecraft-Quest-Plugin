@@ -141,12 +141,12 @@ public final class CompiledMeasures {
         return Optional.ofNullable(best);
     }
 
-    /** Part minimale des colonnes bâties coiffées d'un escalier ou d'une dalle pour parler de toit en pente. */
+    /** Part minimale des colonnes bâties coiffées d'un escalier, d'une dalle ou d'un gradin pour parler de toit en pente. */
     public static final int PITCHED_PERCENT = 40;
 
     /**
-     * #747 (24/10/2026) : combien de colonnes bâties se terminent par un escalier ou une dalle — la
-     * signature d'un toit à pans — sur combien. Un « shell » fermé ne fait qu'un toit plat : gpt-5-mini a
+     * #747 (24/10/2026) : combien de colonnes bâties se terminent par un escalier, une dalle ou un gradin
+     * plein ({@link #stepped(int, int)}) — la signature d'un toit à pans — sur combien. Un « shell » fermé ne fait qu'un toit plat : gpt-5-mini a
      * retiré les deux toits de l'église de test et le plan restait « conforme ».
      *
      * @return {@code {coiffées, bâties}}
@@ -161,12 +161,34 @@ public final class CompiledMeasures {
                 }
                 built++;
                 String b = bareOf(voxels.at(x, top[x][z], z).block());
-                if (b.endsWith("_stairs") || b.endsWith("_slab")) {
+                if (b.endsWith("_stairs") || b.endsWith("_slab") || stepped(x, z)) {
                     pitched++;
                 }
             }
         }
         return new int[] {pitched, built};
+    }
+
+    /**
+     * #747 (29/10/2026) : un rang de toit en gradins de blocs pleins — le « gable » d'un matériau sans
+     * escalier, comme le toit de verre de la serre du botaniste. Sur un axe, le sommet voisin est d'un bloc
+     * plus bas d'un côté et d'un bloc plus haut de l'autre (le versant), ou plus bas des deux côtés ou
+     * à égalité d'un seul (le faîte), ou il n'y a rien dehors et un bloc de plus vers l'intérieur
+     * (l'égout). Un toit plat ou un parapet n'ont pas ce profil.
+     */
+    private boolean stepped(int x, int z) {
+        return stepped(top[x][z], topAt(x - 1, z), topAt(x + 1, z))
+                || stepped(top[x][z], topAt(x, z - 1), topAt(x, z + 1));
+    }
+
+    private static boolean stepped(int t, int a, int b) {
+        return a == t - 1 && b == t + 1 || a == t + 1 && b == t - 1
+                || a == t - 1 && (b == t - 1 || b == t) || b == t - 1 && a == t
+                || a < 0 && b == t + 1 || b < 0 && a == t + 1;
+    }
+
+    private int topAt(int x, int z) {
+        return x < 0 || z < 0 || x >= voxels.sizeX() || z >= voxels.sizeZ() ? -1 : top[x][z];
     }
 
     /** Les cellules d'un bloc donné ({@code minecraft:bell}…), comme {@code {x, y, z}}. */

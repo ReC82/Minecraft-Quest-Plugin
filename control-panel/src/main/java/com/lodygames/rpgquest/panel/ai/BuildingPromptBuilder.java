@@ -208,7 +208,9 @@ public final class BuildingPromptBuilder {
                 - op: pillars → une colonne verticale tous les « spacing » blocs le long de la
                                 zone. Clés : « spacing » (défaut 4, minimum 2).
                 - op: gable   → toit à deux pentes. Exige « axis: x » ou « axis: z » — l'axe du
-                                FAÎTE, pas une direction — et un bloc d'ESCALIER. Ajoute « fill: » avec un bloc plein :
+                                FAÎTE, pas une direction — et un bloc d'ESCALIER. Toit vitré : il n'existe
+                                pas d'escalier de verre ; « block: minecraft:glass » donne des gradins de
+                                verre plein. Ajoute « fill: » avec un bloc plein :
                                 c'est le matériau des deux triangles de pignon, et sans lui le
                                 pignon est fait d'escaliers, ce qui laisse des creux visibles.
                                 UN SEUL « gable » par corps de bâtiment : deux toits superposés

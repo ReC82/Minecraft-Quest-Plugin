@@ -150,7 +150,7 @@ public final class HubWorldProtectionListener implements Listener {
     }
 
     /** Joueur derrière une entité : lui-même, ou le tireur d'un projectile ; sinon {@code null}. */
-    private static Player playerBehind(Entity damager) {
+    static Player playerBehind(Entity damager) {
         if (damager instanceof Player player) {
             return player;
         }

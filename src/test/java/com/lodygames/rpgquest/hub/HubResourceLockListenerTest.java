@@ -18,9 +18,13 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.Container;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Vehicle;
 import org.bukkit.entity.Villager;
 import org.bukkit.entity.WanderingTrader;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.block.BlockDispenseEvent;
+import org.bukkit.event.block.CrafterCraftEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.inventory.InventoryPickupItemEvent;
@@ -30,6 +34,9 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.event.vehicle.VehicleDamageEvent;
+import org.bukkit.event.vehicle.VehicleDestroyEvent;
+import org.bukkit.util.Vector;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -227,6 +234,128 @@ class HubResourceLockListenerTest {
         assertFalse(inWild.isCancelled(), "Wild inchangé");
     }
 
+    // ---- Éjection redstone (#939) ---------------------------------------------------------------------
+
+    @Test
+    void hubDroppersAndCraftersEjectNothing() {
+        BlockDispenseEvent dropper = dispense(hub, Material.DROPPER, Material.FIREWORK_ROCKET);
+        listener.onDispense(dropper);
+        assertTrue(dropper.isCancelled(), "un dropper ne fait qu'éjecter, même un objet décoratif");
+
+        CrafterCraftEvent craft = new CrafterCraftEvent(blockAt(hub, Material.CRAFTER), null,
+                new ItemStack(Material.STICK, 4));
+        listener.onCrafterCraft(craft);
+        assertTrue(craft.isCancelled(), "le résultat d'un crafter serait éjecté au sol");
+    }
+
+    @Test
+    void hubDispensersKeepTheirDecorativeUsesOnly() {
+        for (Material item : HubResourceLockListener.DECORATIVE_DISPENSES) {
+            BlockDispenseEvent decorative = dispense(hub, Material.DISPENSER, item);
+            listener.onDispense(decorative);
+            assertFalse(decorative.isCancelled(), item + " : distributeur décoratif conservé");
+        }
+        for (Material item : new Material[] {Material.ARROW, Material.DIAMOND, Material.IRON_CHESTPLATE,
+                Material.SHEARS, Material.LAVA_BUCKET, Material.MINECART, Material.BONE_MEAL}) {
+            BlockDispenseEvent resource = dispense(hub, Material.DISPENSER, item);
+            listener.onDispense(resource);
+            assertTrue(resource.isCancelled(), item + " : objet ramassable ou ressource, reste dans le bloc");
+        }
+    }
+
+    @Test
+    void dispensersDroppersAndCraftersOutsideTheHubAreUntouched() {
+        for (World world : new World[] {wild, claims}) {
+            for (Material block : new Material[] {Material.DISPENSER, Material.DROPPER}) {
+                BlockDispenseEvent event = dispense(world, block, Material.DIAMOND);
+                listener.onDispense(event);
+                assertFalse(event.isCancelled(), block + " libre dans " + world.getName());
+            }
+            CrafterCraftEvent craft = new CrafterCraftEvent(blockAt(world, Material.CRAFTER), null,
+                    new ItemStack(Material.STICK, 4));
+            listener.onCrafterCraft(craft);
+            assertFalse(craft.isCancelled(), "crafter libre dans " + world.getName());
+        }
+    }
+
+    // ---- Véhicules à conteneur (#939) ----------------------------------------------------------------
+
+    private static final EntityType[] CONTAINER_VEHICLES = {
+            EntityType.CHEST_MINECART, EntityType.HOPPER_MINECART, EntityType.OAK_CHEST_BOAT};
+
+    @Test
+    void hubContainerVehiclesCannotBeDamagedOrDestroyedAndKeepTheirContent() {
+        PlayerMock player = playerIn(hub);
+        for (EntityType type : CONTAINER_VEHICLES) {
+            Vehicle vehicle = vehicleIn(hub, type);
+            ((InventoryHolder) vehicle).getInventory().setItem(0, new ItemStack(Material.EMERALD, 5));
+
+            VehicleDamageEvent hit = new VehicleDamageEvent(vehicle, player, 10);
+            listener.onVehicleDamage(hit);
+            VehicleDestroyEvent destroy = new VehicleDestroyEvent(vehicle, player);
+            listener.onVehicleDestroy(destroy);
+            VehicleDamageEvent explosion = new VehicleDamageEvent(vehicle, null, 10);
+            listener.onVehicleDamage(explosion);
+            VehicleDestroyEvent environment = new VehicleDestroyEvent(vehicle, null);
+            listener.onVehicleDestroy(environment);
+
+            assertTrue(hit.isCancelled(), type + " : coup de joueur");
+            assertTrue(destroy.isCancelled(), type + " : destruction par un joueur");
+            assertTrue(explosion.isCancelled(), type + " : dégât sans auteur");
+            assertTrue(environment.isCancelled(), type + " : destruction sans auteur");
+            assertEquals(5, ((InventoryHolder) vehicle).getInventory().getItem(0).getAmount(), "verrouiller, jamais vider");
+        }
+        assertTrue(player.nextComponentMessage() != null, "un message discret");
+        assertNull(player.nextComponentMessage(), "pas de spam");
+    }
+
+    @Test
+    void plainVehiclesAndContainerVehiclesOutsideTheHubAreUntouched() {
+        PlayerMock inHub = playerIn(hub);
+        for (EntityType type : new EntityType[] {EntityType.MINECART, EntityType.OAK_BOAT}) {
+            VehicleDamageEvent plain = new VehicleDamageEvent(vehicleIn(hub, type), inHub, 10);
+            listener.onVehicleDamage(plain);
+            assertFalse(plain.isCancelled(), type + " : véhicule sans conteneur, hors périmètre");
+        }
+        for (World world : new World[] {wild, claims}) {
+            PlayerMock player = playerIn(world);
+            for (EntityType type : CONTAINER_VEHICLES) {
+                Vehicle vehicle = vehicleIn(world, type);
+                VehicleDamageEvent hit = new VehicleDamageEvent(vehicle, player, 10);
+                listener.onVehicleDamage(hit);
+                VehicleDestroyEvent destroy = new VehicleDestroyEvent(vehicle, player);
+                listener.onVehicleDestroy(destroy);
+                assertFalse(hit.isCancelled(), type + " libre dans " + world.getName());
+                assertFalse(destroy.isCancelled(), type + " libre dans " + world.getName());
+            }
+            assertNull(player.nextComponentMessage(), "aucun message de refus hors Hub");
+        }
+    }
+
+    @Test
+    void anAdminInBypassSessionMayBreakAHubContainerVehicleButNotAnExplosion() {
+        PlayerMock admin = playerIn(hub);
+        admin.addAttachment(plugin, HubResourceLockListener.BYPASS_PERMISSION, true);
+        Vehicle cart = vehicleIn(hub, EntityType.CHEST_MINECART);
+
+        VehicleDestroyEvent withoutSession = new VehicleDestroyEvent(cart, admin);
+        listener.onVehicleDestroy(withoutSession);
+        assertTrue(withoutSession.isCancelled(), "le nœud seul ne suffit pas (#35)");
+
+        admin.addAttachment(plugin, AdminBypassMode.PERMISSION, true);
+        bypass.enable(admin);
+        VehicleDamageEvent hit = new VehicleDamageEvent(cart, admin, 10);
+        listener.onVehicleDamage(hit);
+        VehicleDestroyEvent destroy = new VehicleDestroyEvent(cart, admin);
+        listener.onVehicleDestroy(destroy);
+        assertFalse(hit.isCancelled());
+        assertFalse(destroy.isCancelled());
+
+        VehicleDestroyEvent environment = new VehicleDestroyEvent(cart, null);
+        listener.onVehicleDestroy(environment);
+        assertTrue(environment.isCancelled(), "sans auteur, aucun contournement");
+    }
+
     // ---- Non-régression Claims ------------------------------------------------------------------------
 
     @Test
@@ -260,6 +389,20 @@ class HubResourceLockListenerTest {
         Block block = hub.getBlockAt(nextX++ * 2, 64, 40);
         block.setType(type);
         return (InventoryHolder) block.getState();
+    }
+
+    private static Block blockAt(World world, Material type) {
+        Block block = world.getBlockAt(nextX++ * 2, 64, 60);
+        block.setType(type);
+        return block;
+    }
+
+    private static BlockDispenseEvent dispense(World world, Material block, Material item) {
+        return new BlockDispenseEvent(blockAt(world, block), new ItemStack(item), new Vector(0, 0, 1));
+    }
+
+    private static Vehicle vehicleIn(World world, EntityType type) {
+        return (Vehicle) world.spawnEntity(new Location(world, nextX++ * 2, 64, 80), type);
     }
 
     private static Inventory containerAt(World world, Material type) {

@@ -630,3 +630,4 @@ Voir n'importe quel rapport existant ci-dessous pour un exemple rempli.
 | 2026-11-25 | #0 — tri du backlog de 18:23 : aucun commentaire ni ticket nouveau depuis le 25/11 12:20 ; aucun ticket mis en file | DONE | [2026-11-25_1823_tri-backlog-0.md](2026-11-25_1823_tri-backlog-0.md) |
 | 2026-11-26 | #0 — tri du backlog de 00:25 : aucun commentaire ni ticket nouveau depuis le 25/11 18:23 ; aucun ticket mis en file | DONE | [2026-11-26_0025_tri-backlog-0.md](2026-11-26_0025_tri-backlog-0.md) |
 | 2026-11-26 | #0 — tri du backlog de 06:27 : aucun commentaire ni ticket nouveau depuis le 26/11 00:25 ; aucun ticket mis en file | DONE | [2026-11-26_0627_tri-backlog-0.md](2026-11-26_0627_tri-backlog-0.md) |
+| 2026-11-26 | #0 — tri du backlog de 12:29 : aucun commentaire ni ticket nouveau depuis le 26/11 06:27 ; aucun ticket mis en file | DONE | [2026-11-26_1229_tri-backlog-0.md](2026-11-26_1229_tri-backlog-0.md) |
